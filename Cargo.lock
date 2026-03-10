@@ -6,10 +6,16 @@ version = 4
 name = "app-services"
 version = "0.1.0"
 dependencies = [
+ "capture-engine",
  "file-io",
+ "filter-engine",
  "parser-core",
  "session-model",
 ]
+
+[[package]]
+name = "capture-engine"
+version = "0.1.0"
 
 [[package]]
 name = "file-io"
@@ -31,6 +37,7 @@ version = "0.1.0"
 dependencies = [
  "app-services",
  "output-formatters",
+ "session-model",
 ]
 
 [[package]]

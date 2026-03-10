@@ -39,6 +39,66 @@ pub fn read_capture(path: &Path) -> Result<LoadedCapture, String> {
     })
 }
 
+pub fn write_pcap(path: &Path, packets: &[CapturedPacket]) -> Result<(), String> {
+    let has_nanosecond_timestamps = packets.iter().any(|packet| {
+        matches!(
+            packet.summary.timestamp_precision,
+            TimestampPrecision::Nanoseconds
+        )
+    });
+
+    let linktype = packets.first().map(|packet| packet.linktype).unwrap_or(1);
+    if packets.iter().any(|packet| packet.linktype != linktype) {
+        return Err("cannot write pcap output with mixed link-layer types".to_string());
+    }
+
+    let snaplen = packets
+        .iter()
+        .map(|packet| packet.summary.original_length)
+        .max()
+        .unwrap_or(65_535)
+        .max(65_535);
+
+    let mut bytes = Vec::new();
+    if has_nanosecond_timestamps {
+        bytes.extend_from_slice(&PCAP_NANO_LE);
+    } else {
+        bytes.extend_from_slice(&PCAP_MAGIC_LE);
+    }
+    bytes.extend_from_slice(&2u16.to_le_bytes());
+    bytes.extend_from_slice(&4u16.to_le_bytes());
+    bytes.extend_from_slice(&0i32.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&snaplen.to_le_bytes());
+    bytes.extend_from_slice(&linktype.to_le_bytes());
+
+    for packet in packets {
+        let captured_length = u32::try_from(packet.raw_bytes.len())
+            .map_err(|_| "packet payload length exceeds PCAP limits".to_string())?;
+        let original_length = packet.summary.original_length.max(captured_length);
+        let timestamp_fraction = match (
+            has_nanosecond_timestamps,
+            &packet.summary.timestamp_precision,
+        ) {
+            (true, TimestampPrecision::Nanoseconds) => packet.summary.timestamp_fraction,
+            (true, TimestampPrecision::Microseconds) => {
+                packet.summary.timestamp_fraction.saturating_mul(1_000)
+            }
+            (false, TimestampPrecision::Microseconds) => packet.summary.timestamp_fraction,
+            (false, TimestampPrecision::Nanoseconds) => packet.summary.timestamp_fraction / 1_000,
+        };
+
+        bytes.extend_from_slice(&packet.summary.timestamp_seconds.to_le_bytes());
+        bytes.extend_from_slice(&timestamp_fraction.to_le_bytes());
+        bytes.extend_from_slice(&captured_length.to_le_bytes());
+        bytes.extend_from_slice(&original_length.to_le_bytes());
+        bytes.extend_from_slice(&packet.raw_bytes);
+    }
+
+    fs::write(path, bytes)
+        .map_err(|error| format!("failed to write pcap output {}: {error}", path.display()))
+}
+
 fn detect_capture_format(bytes: &[u8]) -> CaptureFormat {
     match bytes.get(..4) {
         Some(header)
@@ -66,9 +126,7 @@ fn parse_pcap_records(bytes: &[u8]) -> Result<Vec<CapturedPacket>, String> {
 
     while offset < bytes.len() {
         if offset + 16 > bytes.len() {
-            return Err(format!(
-                "pcap packet header at offset {offset} is truncated"
-            ));
+            break;
         }
 
         let timestamp_seconds = read_u32(header.endianness, &bytes[offset..offset + 4])?;
@@ -81,7 +139,7 @@ fn parse_pcap_records(bytes: &[u8]) -> Result<Vec<CapturedPacket>, String> {
             .checked_add(captured_length as usize)
             .ok_or_else(|| "pcap packet length overflows address space".to_string())?;
         if packet_end > bytes.len() {
-            return Err(format!("pcap packet {index} payload exceeds file length"));
+            break;
         }
 
         packets.push(CapturedPacket {
@@ -134,18 +192,14 @@ fn parse_pcapng_records(bytes: &[u8]) -> Result<Vec<CapturedPacket>, String> {
         let block_type = read_u32(endianness, &bytes[offset..offset + 4])?;
         let block_total_length = read_u32(endianness, &bytes[offset + 4..offset + 8])? as usize;
         if block_total_length < 12 || offset + block_total_length > bytes.len() {
-            return Err(format!(
-                "pcapng block at offset {offset} has an invalid length"
-            ));
+            break;
         }
         let trailing_length = read_u32(
             endianness,
             &bytes[offset + block_total_length - 4..offset + block_total_length],
         )? as usize;
         if trailing_length != block_total_length {
-            return Err(format!(
-                "pcapng block at offset {offset} has mismatched leading and trailing lengths"
-            ));
+            break;
         }
 
         let body = &bytes[offset + 8..offset + block_total_length - 4];
@@ -335,7 +389,9 @@ fn read_u32(endianness: Endianness, bytes: &[u8]) -> Result<u32, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{detect_capture_format, parse_pcap_records, parse_pcapng_records, read_capture};
+    use super::{
+        detect_capture_format, parse_pcap_records, parse_pcapng_records, read_capture, write_pcap,
+    };
     use session_model::{CaptureFormat, TimestampPrecision};
     use std::fs;
     use std::path::PathBuf;
@@ -380,12 +436,93 @@ mod tests {
     }
 
     #[test]
+    fn parses_golden_pcap_fixture() {
+        let bytes = load_hex_fixture("sample.pcap.hex");
+        let packets = parse_pcap_records(&bytes).expect("expected golden pcap fixture to parse");
+        assert_eq!(packets.len(), 2);
+        assert_eq!(packets[0].summary.index, 0);
+        assert_eq!(packets[1].summary.index, 1);
+    }
+
+    #[test]
+    fn parses_golden_pcapng_fixture() {
+        let bytes = load_hex_fixture("sample.pcapng.hex");
+        let packets =
+            parse_pcapng_records(&bytes).expect("expected golden pcapng fixture to parse");
+        assert_eq!(packets.len(), 2);
+        assert_eq!(packets[0].summary.index, 0);
+        assert_eq!(packets[1].summary.index, 1);
+    }
+
+    #[test]
     fn reads_capture_file() {
         let path = write_temp_file("pcapng", &sample_pcapng_bytes());
         let capture = read_capture(&path).unwrap();
         fs::remove_file(&path).unwrap();
         assert_eq!(capture.format, CaptureFormat::PcapNg);
         assert_eq!(capture.packets.len(), 2);
+    }
+
+    #[test]
+    fn tolerates_truncated_trailing_pcap_packet_during_live_reads() {
+        let mut bytes = sample_pcap_bytes();
+        bytes.pop();
+
+        let packets = parse_pcap_records(&bytes).unwrap();
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0].summary.index, 0);
+    }
+
+    #[test]
+    fn tolerates_truncated_trailing_pcapng_block_during_live_reads() {
+        let mut bytes = sample_pcapng_bytes();
+        bytes.pop();
+
+        let packets = parse_pcapng_records(&bytes).unwrap();
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0].summary.index, 0);
+    }
+
+    #[test]
+    fn reports_error_for_malformed_pcap_fixture() {
+        let bytes = load_hex_fixture("malformed-truncated-header.pcap.hex");
+        let error =
+            parse_pcap_records(&bytes).expect_err("expected malformed pcap fixture to fail");
+        assert!(error.contains("shorter than the global header"));
+    }
+
+    #[test]
+    fn reports_error_for_malformed_pcapng_fixture() {
+        let bytes = load_hex_fixture("malformed-invalid-byte-order.pcapng.hex");
+        let error =
+            parse_pcapng_records(&bytes).expect_err("expected malformed pcapng fixture to fail");
+        assert!(error.contains("invalid byte-order magic"));
+    }
+
+    #[test]
+    fn writes_pcap_and_round_trips_packets() {
+        let packets = parse_pcap_records(&sample_pcap_bytes()).expect("expected sample packets");
+        let path = write_temp_file("pcap", b"");
+
+        write_pcap(&path, &packets).expect("expected pcap write to succeed");
+        let capture = read_capture(&path).expect("expected pcap read to succeed");
+        fs::remove_file(&path).expect("failed to remove written pcap");
+
+        assert_eq!(capture.format, CaptureFormat::Pcap);
+        assert_eq!(capture.packets.len(), packets.len());
+        assert_eq!(capture.packets[0].raw_bytes, packets[0].raw_bytes);
+    }
+
+    #[test]
+    fn rejects_writing_mixed_linktype_packets() {
+        let mut packets = parse_pcap_records(&sample_pcap_bytes()).expect("expected packets");
+        packets[1].linktype = 999;
+        let path = write_temp_file("pcap", b"");
+
+        let error = write_pcap(&path, &packets).expect_err("expected write to fail");
+        fs::remove_file(&path).expect("failed to remove temp file");
+
+        assert!(error.contains("mixed link-layer types"));
     }
 
     fn sample_pcap_bytes() -> Vec<u8> {
@@ -467,5 +604,34 @@ mod tests {
             0x14, 0xe9, 0x00, 0x35, 0x00, 0x0c, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef,
         ]);
         bytes
+    }
+
+    fn load_hex_fixture(name: &str) -> Vec<u8> {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/golden")
+            .join(name);
+        let hex = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("failed to read fixture {}: {error}", path.display()));
+        decode_hex_fixture(&hex).unwrap_or_else(|error| {
+            panic!("failed to decode hex fixture {}: {error}", path.display())
+        })
+    }
+
+    fn decode_hex_fixture(contents: &str) -> Result<Vec<u8>, String> {
+        let filtered = contents
+            .chars()
+            .filter(|ch| ch.is_ascii_hexdigit())
+            .collect::<String>();
+        if filtered.len() % 2 != 0 {
+            return Err("fixture hex length must be even".to_string());
+        }
+
+        (0..filtered.len())
+            .step_by(2)
+            .map(|index| {
+                u8::from_str_radix(&filtered[index..index + 2], 16)
+                    .map_err(|error| format!("invalid hex byte at offset {index}: {error}"))
+            })
+            .collect()
     }
 }

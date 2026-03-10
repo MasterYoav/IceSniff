@@ -17,6 +17,16 @@ pub struct CaptureReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SaveCaptureReport {
+    pub source_path: PathBuf,
+    pub output_path: PathBuf,
+    pub format: CaptureFormat,
+    pub packets_written: u64,
+    pub filter: Option<String>,
+    pub stream_filter: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TimestampPrecision {
     Microseconds,
     Nanoseconds,
@@ -82,12 +92,45 @@ pub struct StreamReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransactionReport {
+    pub path: PathBuf,
+    pub format: CaptureFormat,
+    pub total_transactions: u64,
+    pub transactions: Vec<TransactionRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransactionRow {
+    pub service: String,
+    pub protocol: String,
+    pub client: String,
+    pub server: String,
+    pub sequence: u64,
+    pub request_summary: String,
+    pub request_details: Vec<TransactionDetail>,
+    pub response_summary: String,
+    pub response_details: Vec<TransactionDetail>,
+    pub state: String,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TransactionDetail {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamRow {
     pub service: String,
     pub protocol: String,
     pub client: String,
     pub server: String,
     pub packets: u64,
+    pub syn_packets: u64,
+    pub fin_packets: u64,
+    pub rst_packets: u64,
+    pub session_state: String,
     pub client_to_server_packets: u64,
     pub server_to_client_packets: u64,
     pub request_count: u64,
@@ -95,9 +138,19 @@ pub struct StreamRow {
     pub matched_transactions: u64,
     pub unmatched_requests: u64,
     pub unmatched_responses: u64,
+    pub tls_client_hellos: u64,
+    pub tls_server_hellos: u64,
+    pub tls_certificates: u64,
+    pub tls_finished_messages: u64,
+    pub tls_handshake_cycles: u64,
+    pub tls_incomplete_handshakes: u64,
+    pub tls_handshake_state: String,
+    pub tls_alert_count: u64,
+    pub tls_alerts: Vec<String>,
     pub total_captured_bytes: u64,
     pub first_packet_index: u64,
     pub last_packet_index: u64,
+    pub transaction_timeline: Vec<String>,
     pub notes: Vec<String>,
 }
 

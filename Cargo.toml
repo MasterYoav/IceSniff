@@ -2,6 +2,7 @@
 members = [
     "apps/cli",
     "crates/app-services",
+    "crates/capture-engine",
     "crates/filter-engine",
     "crates/file-io",
     "crates/output-formatters",

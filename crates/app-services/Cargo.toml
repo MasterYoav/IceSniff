@@ -7,7 +7,9 @@ authors.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+capture-engine = { path = "../capture-engine" }
 file-io = { path = "../file-io" }
+filter-engine = { path = "../filter-engine" }
 parser-core = { path = "../parser-core" }
 session-model = { path = "../session-model" }
 

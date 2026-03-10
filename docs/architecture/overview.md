@@ -39,6 +39,7 @@ This layer holds stable data structures that can be shared by both interfaces.
 This layer contains file access and capture-container loading.
 
 - `crates/file-io`
+- `crates/capture-engine`
 
 ### Parser/dissector layer
 
@@ -68,6 +69,7 @@ The current implementation proves the initial dependency direction:
 
 - CLI -> app-services -> file-io/session-model
 - CLI -> app-services -> parser-core -> protocol-dissectors/session-model
+- CLI -> app-services -> capture-engine
 - CLI -> output-formatters -> session-model
 
 That is the baseline shape the rest of the project should preserve.

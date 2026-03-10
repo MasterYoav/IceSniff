@@ -1,31 +1,63 @@
 use std::env;
+use std::fmt;
+use std::io::{self, Write};
 use std::path::PathBuf;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::thread;
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 use app_services::{
-    CaptureStatsInput, CaptureStatsService, ConversationsInput, ConversationsService,
+    CaptureError, CaptureStatsInput, CaptureStatsService, ConversationsInput, ConversationsService,
     InspectCaptureInput, InspectCaptureService, InspectPacketInput, InspectPacketService,
-    ListPacketsInput, ListPacketsService, StreamsInput, StreamsService,
+    ListPacketsInput, ListPacketsService, LiveCaptureCoordinator, LiveCaptureSession,
+    SaveCaptureInput, SaveCaptureService, StartLiveCaptureInput, StreamsInput, StreamsService,
+    TransactionsInput, TransactionsService,
 };
 use output_formatters::{
     render_capture_report, render_capture_report_json, render_capture_stats_report,
     render_capture_stats_report_json, render_conversation_report, render_conversation_report_json,
     render_packet_detail_report, render_packet_detail_report_json, render_packet_list_report,
-    render_packet_list_report_json, render_stream_report, render_stream_report_json,
+    render_packet_list_report_json, render_save_capture_report, render_save_capture_report_json,
+    render_stream_report, render_stream_report_json, render_transaction_report,
+    render_transaction_report_json,
 };
 
 fn main() {
     if let Err(error) = run() {
         eprintln!("{error}");
-        std::process::exit(1);
+        std::process::exit(error.exit_status);
     }
 }
 
-fn run() -> Result<(), String> {
-    let cli = parse_cli(env::args().skip(1))?;
+fn run() -> Result<(), CliError> {
+    let cli = parse_cli(env::args().skip(1)).map_err(CliError::usage)?;
 
     match cli.command {
         Command::Help => {
             println!("{}", help_text());
+            Ok(())
+        }
+        Command::Shell { path } => run_shell(path, cli.output_mode).map_err(CliError::from),
+        Command::Save {
+            source_path,
+            output_path,
+            filter,
+            stream_filter,
+        } => {
+            let report = SaveCaptureService::default().save(SaveCaptureInput {
+                source_path,
+                output_path,
+                filter,
+                stream_filter,
+            })?;
+            match cli.output_mode {
+                OutputMode::Text => println!("{}", render_save_capture_report(&report)),
+                OutputMode::Json => println!("{}", render_save_capture_report_json(&report)),
+            }
             Ok(())
         }
         Command::Inspect { path } => {
@@ -80,13 +112,98 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         Command::Streams { path, filter } => {
-            let report = StreamsService::default().list(StreamsInput { path, filter })?;
+            let report = StreamsService::default().list(StreamsInput {
+                path,
+                filter,
+                stream_filter: None,
+            })?;
             match cli.output_mode {
                 OutputMode::Text => println!("{}", render_stream_report(&report)),
                 OutputMode::Json => println!("{}", render_stream_report_json(&report)),
             }
             Ok(())
         }
+        Command::StreamsWithAnalysisFilter {
+            path,
+            filter,
+            stream_filter,
+        } => {
+            let report = StreamsService::default().list(StreamsInput {
+                path,
+                filter,
+                stream_filter,
+            })?;
+            match cli.output_mode {
+                OutputMode::Text => println!("{}", render_stream_report(&report)),
+                OutputMode::Json => println!("{}", render_stream_report_json(&report)),
+            }
+            Ok(())
+        }
+        Command::Transactions { path, filter } => {
+            let report = TransactionsService::default().list(TransactionsInput {
+                path,
+                filter,
+                transaction_filter: None,
+            })?;
+            match cli.output_mode {
+                OutputMode::Text => println!("{}", render_transaction_report(&report)),
+                OutputMode::Json => println!("{}", render_transaction_report_json(&report)),
+            }
+            Ok(())
+        }
+        Command::TransactionsWithAnalysisFilter {
+            path,
+            filter,
+            transaction_filter,
+        } => {
+            let report = TransactionsService::default().list(TransactionsInput {
+                path,
+                filter,
+                transaction_filter,
+            })?;
+            match cli.output_mode {
+                OutputMode::Text => println!("{}", render_transaction_report(&report)),
+                OutputMode::Json => println!("{}", render_transaction_report_json(&report)),
+            }
+            Ok(())
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CliError {
+    code: &'static str,
+    exit_status: i32,
+    message: String,
+}
+
+impl CliError {
+    fn usage(message: impl Into<String>) -> Self {
+        Self {
+            code: "ISCLI_USAGE",
+            exit_status: 2,
+            message: message.into(),
+        }
+    }
+
+    fn runtime(message: impl Into<String>) -> Self {
+        Self {
+            code: "ISCLI_RUNTIME",
+            exit_status: 1,
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for CliError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}] {}", self.code, self.message)
+    }
+}
+
+impl From<String> for CliError {
+    fn from(value: String) -> Self {
+        Self::runtime(value)
     }
 }
 
@@ -105,6 +222,15 @@ enum OutputMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Command {
     Help,
+    Shell {
+        path: Option<PathBuf>,
+    },
+    Save {
+        source_path: PathBuf,
+        output_path: PathBuf,
+        filter: Option<String>,
+        stream_filter: Option<String>,
+    },
     Inspect {
         path: PathBuf,
     },
@@ -128,6 +254,20 @@ enum Command {
     Streams {
         path: PathBuf,
         filter: Option<String>,
+    },
+    StreamsWithAnalysisFilter {
+        path: PathBuf,
+        filter: Option<String>,
+        stream_filter: Option<String>,
+    },
+    Transactions {
+        path: PathBuf,
+        filter: Option<String>,
+    },
+    TransactionsWithAnalysisFilter {
+        path: PathBuf,
+        filter: Option<String>,
+        transaction_filter: Option<String>,
     },
 }
 
@@ -158,7 +298,33 @@ where
     remaining.extend(args);
 
     let command = match command_name.as_deref() {
-        Some("help") | None => Command::Help,
+        Some("help") => Command::Help,
+        None => Command::Shell { path: None },
+        Some("shell") => Command::Shell {
+            path: remaining.first().map(PathBuf::from),
+        },
+        Some("save") => {
+            let parsed = parse_analysis_filter_args(&remaining, "--stream-filter")?;
+            let source_path = parsed
+                .positional
+                .first()
+                .map(PathBuf::from)
+                .ok_or_else(|| usage("missing source capture file path"))?;
+            let output_path = parsed
+                .positional
+                .get(1)
+                .map(PathBuf::from)
+                .ok_or_else(|| usage("missing output capture file path"))?;
+            if parsed.positional.len() > 2 {
+                return Err(usage("too many arguments for save"));
+            }
+            Command::Save {
+                source_path,
+                output_path,
+                filter: parsed.filter,
+                stream_filter: parsed.analysis_filter,
+            }
+        }
         Some("inspect") => Command::Inspect {
             path: single_path_arg("inspect", &remaining)?,
         },
@@ -223,10 +389,33 @@ where
             }
         }
         Some("streams") => {
-            let (filter, positional) = parse_filter_args(&remaining)?;
-            Command::Streams {
-                path: single_path_arg("streams", &positional)?,
-                filter,
+            let parsed = parse_analysis_filter_args(&remaining, "--stream-filter")?;
+            if parsed.analysis_filter.is_some() {
+                Command::StreamsWithAnalysisFilter {
+                    path: single_path_arg("streams", &parsed.positional)?,
+                    filter: parsed.filter,
+                    stream_filter: parsed.analysis_filter,
+                }
+            } else {
+                Command::Streams {
+                    path: single_path_arg("streams", &parsed.positional)?,
+                    filter: parsed.filter,
+                }
+            }
+        }
+        Some("transactions") => {
+            let parsed = parse_analysis_filter_args(&remaining, "--transaction-filter")?;
+            if parsed.analysis_filter.is_some() {
+                Command::TransactionsWithAnalysisFilter {
+                    path: single_path_arg("transactions", &parsed.positional)?,
+                    filter: parsed.filter,
+                    transaction_filter: parsed.analysis_filter,
+                }
+            } else {
+                Command::Transactions {
+                    path: single_path_arg("transactions", &parsed.positional)?,
+                    filter: parsed.filter,
+                }
             }
         }
         Some(command) => return Err(usage(&format!("unknown command: {command}"))),
@@ -250,7 +439,23 @@ fn single_path_arg(command: &str, args: &[String]) -> Result<PathBuf, String> {
 }
 
 fn parse_filter_args(args: &[String]) -> Result<(Option<String>, Vec<String>), String> {
+    let parsed = parse_analysis_filter_args(args, "")?;
+    Ok((parsed.filter, parsed.positional))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedAnalysisFilters {
+    filter: Option<String>,
+    analysis_filter: Option<String>,
+    positional: Vec<String>,
+}
+
+fn parse_analysis_filter_args(
+    args: &[String],
+    analysis_flag: &str,
+) -> Result<ParsedAnalysisFilters, String> {
     let mut filter = None;
+    let mut analysis_filter = None;
     let mut positional = Vec::new();
     let mut index = 0usize;
 
@@ -263,11 +468,23 @@ fn parse_filter_args(args: &[String]) -> Result<(Option<String>, Vec<String>), S
             index += 2;
             continue;
         }
+        if !analysis_flag.is_empty() && args[index] == analysis_flag {
+            let value = args
+                .get(index + 1)
+                .ok_or_else(|| usage(&format!("missing value for {analysis_flag}")))?;
+            analysis_filter = Some(value.clone());
+            index += 2;
+            continue;
+        }
         positional.push(args[index].clone());
         index += 1;
     }
 
-    Ok((filter, positional))
+    Ok(ParsedAnalysisFilters {
+        filter,
+        analysis_filter,
+        positional,
+    })
 }
 
 fn help_text() -> &'static str {
@@ -276,24 +493,67 @@ IceSniff CLI
 
 Usage:
   icesniff-cli help
+  icesniff-cli [--json] shell [capture-file]
+  icesniff-cli [--json] save <source-capture-file> <output-capture-file> [--filter <expr>] [--stream-filter <expr>]
   icesniff-cli [--json] inspect <capture-file>
   icesniff-cli [--json] list <capture-file> [limit] [--filter <expr>]
   icesniff-cli [--json] show-packet <capture-file> <packet-index>
   icesniff-cli [--json] stats <capture-file> [--filter <expr>]
   icesniff-cli [--json] conversations <capture-file> [--filter <expr>]
-  icesniff-cli [--json] streams <capture-file> [--filter <expr>]
+  icesniff-cli [--json] streams <capture-file> [--filter <expr>] [--stream-filter <expr>]
+  icesniff-cli [--json] transactions <capture-file> [--filter <expr>] [--transaction-filter <expr>]
 
 Commands:
+  shell        Start an interactive IceSniff session with a current capture context.
+  save         Write packet/stream-filtered capture output into a new PCAP file.
   inspect      Read a capture file and print a shared-engine summary.
   list         Enumerate packets through shared services with derived columns.
   show-packet  Decode one packet through the shared service layer.
   stats        Summarize packet and protocol counts through shared services.
   conversations  Summarize bidirectional flows through shared services.
   streams      Summarize client/server streams and basic transactions.
+  transactions  Enumerate parsed HTTP and TLS transactions from shared stream analysis.
 
 Flags:
-  --json       Emit machine-readable JSON instead of text output.
-  --filter     Apply filters like `protocol=dns`, `protocol=http`, `port=443`, or `host=example.com`.
+  --json       Emit machine-readable JSON (schema_version=v1) instead of text output.
+  --filter     Apply packet filters like `protocol=dns && !port=443`, `http.status>=200 && http.status<300`, `http.reason~=content`, `dns.answer_count=0`, `tls.handshake_length>=60`, `tls.server_name~=example`, or `http.method=get && host=EXAMPLE.COM`.
+  --stream-filter  For `save` and `streams`, apply row-level stream filters like `stream.state=reset`, `stream.has_alerts=true`, or `stream.is_pipelined=true && stream.has_timeline=true`.
+  --transaction-filter  Apply row-level transaction filters like `tx.state=matched`, `tx.request.method=get`, or `tx.tls.alpn=h2 && tx.has_alerts=true`.
+
+Error codes:
+  [ISCLI_USAGE]   Exit status 2 for command/argument usage errors.
+  [ISCLI_RUNTIME] Exit status 1 for runtime/service failures.
+"
+}
+
+fn shell_help_text() -> &'static str {
+    "\
+IceSniff shell commands
+
+  help
+  open <capture-file>
+  save <output-capture-file> [--filter <expr>] [--stream-filter <expr>]
+  capture interfaces
+  capture start [interface]
+  capture stop
+  capture status
+  close
+  status
+  mode <text|json>
+  inspect
+  list [limit] [--filter <expr>]
+  show-packet <packet-index>
+  stats [--filter <expr>]
+  conversations [--filter <expr>]
+  streams [--filter <expr>] [--stream-filter <expr>]
+  transactions [--filter <expr>] [--transaction-filter <expr>]
+  quit
+
+Notes:
+  - open a capture once, then run analysis commands against the current session
+  - live capture writes to a temporary pcap and opens it when stopped
+  - quote paths or filter expressions when they contain spaces
+  - mode switches between text and json output inside the shell
 "
 }
 
@@ -301,10 +561,691 @@ fn usage(message: &str) -> String {
     format!("{message}\n\n{}", help_text())
 }
 
+#[derive(Debug)]
+struct ShellState {
+    current_path: Option<PathBuf>,
+    output_mode: OutputMode,
+    active_capture: Option<ActiveCapture>,
+}
+
+#[derive(Debug)]
+struct ActiveCapture {
+    session: LiveCaptureSession,
+    stop_flag: Arc<AtomicBool>,
+    header_printed: Arc<AtomicBool>,
+    last_seen_index: Arc<std::sync::atomic::AtomicU64>,
+    monitor_handle: Option<JoinHandle<()>>,
+}
+
+fn run_shell(path: Option<PathBuf>, output_mode: OutputMode) -> Result<(), String> {
+    let mut state = ShellState {
+        current_path: path,
+        output_mode,
+        active_capture: None,
+    };
+
+    println!("IceSniff shell");
+    println!("type `help` for commands");
+    if let Some(path) = &state.current_path {
+        println!("current capture: {}", path.display());
+    } else {
+        println!("current capture: none");
+    }
+
+    let stdin = io::stdin();
+
+    loop {
+        print!("{}", shell_prompt(&state));
+        io::stdout()
+            .flush()
+            .map_err(|error| format!("failed to flush prompt: {error}"))?;
+
+        let mut line = String::new();
+        let bytes_read = stdin
+            .read_line(&mut line)
+            .map_err(|error| format!("failed to read shell input: {error}"))?;
+        if bytes_read == 0 {
+            println!();
+            break;
+        }
+
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let args = parse_shell_words(trimmed)?;
+        if !execute_shell_command(&mut state, &args)? {
+            stop_active_capture_if_needed(&mut state)?;
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+fn shell_prompt(state: &ShellState) -> String {
+    match &state.current_path {
+        Some(path) => format!("icesniff:{}> ", path.display()),
+        None => "icesniff> ".to_string(),
+    }
+}
+
+fn execute_shell_command(state: &mut ShellState, args: &[String]) -> Result<bool, String> {
+    let Some(command) = args.first().map(String::as_str) else {
+        return Ok(true);
+    };
+
+    match command {
+        "help" => {
+            println!("{}", shell_help_text());
+            Ok(true)
+        }
+        "quit" | "exit" => Ok(false),
+        "capture" => {
+            execute_capture_command(state, &args[1..])?;
+            Ok(true)
+        }
+        "open" => {
+            let path = args
+                .get(1)
+                .map(PathBuf::from)
+                .ok_or_else(|| "shell open requires a capture file path".to_string())?;
+            if args.len() > 2 {
+                return Err("shell open accepts only one capture file path".to_string());
+            }
+            let report = InspectCaptureService::default()
+                .inspect(InspectCaptureInput { path: path.clone() })?;
+            state.current_path = Some(path);
+            render_capture_summary(&state.output_mode, &report);
+            Ok(true)
+        }
+        "save" => {
+            let source_path = require_shell_capture_path(state)?;
+            let parsed = parse_analysis_filter_args(&args[1..], "--stream-filter")?;
+            let output_path = parsed
+                .positional
+                .first()
+                .map(PathBuf::from)
+                .ok_or_else(|| "shell save requires an output capture file path".to_string())?;
+            if parsed.positional.len() > 1 {
+                return Err("shell save accepts only one output capture file path".to_string());
+            }
+            let report = SaveCaptureService::default().save(SaveCaptureInput {
+                source_path,
+                output_path,
+                filter: parsed.filter,
+                stream_filter: parsed.analysis_filter,
+            })?;
+            render_save_capture(&state.output_mode, &report);
+            Ok(true)
+        }
+        "close" => {
+            state.current_path = None;
+            println!("capture closed");
+            Ok(true)
+        }
+        "status" => {
+            let live_capture = match state.active_capture.as_mut() {
+                Some(capture) => {
+                    if capture.session.is_running().map_err(render_capture_error)? {
+                        format!("running on {}", capture.session.interface())
+                    } else {
+                        format!("exited on {}", capture.session.interface())
+                    }
+                }
+                None => "idle".to_string(),
+            };
+            println!(
+                "mode: {}\ncurrent capture: {}\nlive capture: {}",
+                output_mode_name(&state.output_mode),
+                state
+                    .current_path
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+                live_capture
+            );
+            Ok(true)
+        }
+        "mode" => {
+            let value = args
+                .get(1)
+                .ok_or_else(|| "shell mode requires `text` or `json`".to_string())?;
+            if args.len() > 2 {
+                return Err("shell mode accepts only one argument".to_string());
+            }
+            state.output_mode = match value.as_str() {
+                "text" => OutputMode::Text,
+                "json" => OutputMode::Json,
+                _ => return Err("shell mode must be `text` or `json`".to_string()),
+            };
+            println!("mode: {}", output_mode_name(&state.output_mode));
+            Ok(true)
+        }
+        "inspect" => {
+            let path = require_shell_capture_path(state)?;
+            let report = InspectCaptureService::default().inspect(InspectCaptureInput { path })?;
+            render_capture_summary(&state.output_mode, &report);
+            Ok(true)
+        }
+        "list" => {
+            let path = require_shell_capture_path(state)?;
+            let parsed = parse_analysis_filter_args(&args[1..], "")?;
+            let limit = match parsed.positional.first() {
+                Some(raw_limit) => Some(
+                    raw_limit
+                        .parse::<usize>()
+                        .map_err(|_| "shell list limit must be a positive integer".to_string())?,
+                ),
+                None => None,
+            };
+            if limit == Some(0) {
+                return Err("shell list limit must be a positive integer".to_string());
+            }
+            if parsed.positional.len() > 1 {
+                return Err("shell list accepts at most one limit argument".to_string());
+            }
+            let report = ListPacketsService::default().list(ListPacketsInput {
+                path,
+                limit,
+                filter: parsed.filter,
+            })?;
+            render_packet_list(&state.output_mode, &report);
+            Ok(true)
+        }
+        "show-packet" => {
+            let path = require_shell_capture_path(state)?;
+            let packet_index = args
+                .get(1)
+                .ok_or_else(|| "shell show-packet requires a packet index".to_string())?
+                .parse::<u64>()
+                .map_err(|_| {
+                    "shell show-packet index must be a non-negative integer".to_string()
+                })?;
+            if args.len() > 2 {
+                return Err("shell show-packet accepts only one packet index".to_string());
+            }
+            let report = InspectPacketService::default()
+                .inspect(InspectPacketInput { path, packet_index })?;
+            render_packet_detail(&state.output_mode, &report);
+            Ok(true)
+        }
+        "stats" => {
+            let path = require_shell_capture_path(state)?;
+            let (filter, positional) = parse_filter_args(&args[1..])?;
+            if !positional.is_empty() {
+                return Err("shell stats does not accept positional arguments".to_string());
+            }
+            let report =
+                CaptureStatsService::default().stats(CaptureStatsInput { path, filter })?;
+            render_capture_stats(&state.output_mode, &report);
+            Ok(true)
+        }
+        "conversations" => {
+            let path = require_shell_capture_path(state)?;
+            let (filter, positional) = parse_filter_args(&args[1..])?;
+            if !positional.is_empty() {
+                return Err("shell conversations does not accept positional arguments".to_string());
+            }
+            let report =
+                ConversationsService::default().list(ConversationsInput { path, filter })?;
+            render_conversations(&state.output_mode, &report);
+            Ok(true)
+        }
+        "streams" => {
+            let path = require_shell_capture_path(state)?;
+            let parsed = parse_analysis_filter_args(&args[1..], "--stream-filter")?;
+            if !parsed.positional.is_empty() {
+                return Err("shell streams does not accept positional arguments".to_string());
+            }
+            let report = StreamsService::default().list(StreamsInput {
+                path,
+                filter: parsed.filter,
+                stream_filter: parsed.analysis_filter,
+            })?;
+            render_streams(&state.output_mode, &report);
+            Ok(true)
+        }
+        "transactions" => {
+            let path = require_shell_capture_path(state)?;
+            let parsed = parse_analysis_filter_args(&args[1..], "--transaction-filter")?;
+            if !parsed.positional.is_empty() {
+                return Err("shell transactions does not accept positional arguments".to_string());
+            }
+            let report = TransactionsService::default().list(TransactionsInput {
+                path,
+                filter: parsed.filter,
+                transaction_filter: parsed.analysis_filter,
+            })?;
+            render_transactions(&state.output_mode, &report);
+            Ok(true)
+        }
+        _ => Err(format!("unknown shell command: {command}")),
+    }
+}
+
+fn execute_capture_command(state: &mut ShellState, args: &[String]) -> Result<(), String> {
+    let Some(command) = args.first().map(String::as_str) else {
+        return Err(
+            "capture requires a subcommand: interfaces, start, stop, or status".to_string(),
+        );
+    };
+    let coordinator = LiveCaptureCoordinator::default();
+
+    match command {
+        "interfaces" => {
+            if args.len() > 1 {
+                return Err("capture interfaces does not accept extra arguments".to_string());
+            }
+            let interfaces = coordinator
+                .list_interfaces()
+                .map_err(render_capture_error)?;
+            if interfaces.is_empty() {
+                println!("no capture interfaces detected");
+            } else {
+                println!("capture interfaces:");
+                for interface in interfaces {
+                    println!("  - {}", interface.name);
+                }
+            }
+            Ok(())
+        }
+        "start" => {
+            if state.active_capture.is_some() {
+                return Err("a live capture is already running; stop it first".to_string());
+            }
+            if args.len() > 2 {
+                return Err("capture start accepts at most one interface argument".to_string());
+            }
+            let interface = args.get(1).cloned();
+            let session = coordinator
+                .start(StartLiveCaptureInput {
+                    interface: interface.clone(),
+                })
+                .map_err(render_capture_error)?;
+            let interface = session.interface().to_string();
+            let path = session.path().to_path_buf();
+            let stop_flag = Arc::new(AtomicBool::new(false));
+            let header_printed = Arc::new(AtomicBool::new(false));
+            let last_seen_index = Arc::new(std::sync::atomic::AtomicU64::new(u64::MAX));
+            let monitor_handle = Some(start_live_packet_monitor(
+                path.clone(),
+                stop_flag.clone(),
+                header_printed.clone(),
+                last_seen_index.clone(),
+            ));
+
+            state.active_capture = Some(ActiveCapture {
+                session,
+                stop_flag,
+                header_printed,
+                last_seen_index,
+                monitor_handle,
+            });
+            println!(
+                "live capture started on {} -> {}",
+                interface,
+                path.display()
+            );
+            Ok(())
+        }
+        "stop" => {
+            if args.len() > 1 {
+                return Err("capture stop does not accept extra arguments".to_string());
+            }
+            let Some(capture) = state.active_capture.take() else {
+                return Err("no live capture is running".to_string());
+            };
+            let path = stop_capture(capture)?;
+            let report = InspectCaptureService::default()
+                .inspect(InspectCaptureInput { path: path.clone() })?;
+            state.current_path = Some(path);
+            render_capture_summary(&state.output_mode, &report);
+            Ok(())
+        }
+        "status" => {
+            if args.len() > 1 {
+                return Err("capture status does not accept extra arguments".to_string());
+            }
+            let runtime = coordinator.runtime_info();
+            match state.active_capture.as_mut() {
+                Some(capture) => {
+                    if capture.session.is_running().map_err(render_capture_error)? {
+                        println!(
+                            "live capture: running\ninterface: {}\npath: {}\nbackend: {}\ntool: {}",
+                            capture.session.interface(),
+                            capture.session.path().display(),
+                            runtime.backend.as_str(),
+                            runtime.tool_path
+                        );
+                    } else {
+                        println!(
+                            "live capture: exited\ninterface: {}\npath: {}\nbackend: {}\ntool: {}",
+                            capture.session.interface(),
+                            capture.session.path().display(),
+                            runtime.backend.as_str(),
+                            runtime.tool_path
+                        );
+                    }
+                }
+                None => println!(
+                    "live capture: idle\nbackend: {}\ntool: {}",
+                    runtime.backend.as_str(),
+                    runtime.tool_path
+                ),
+            }
+            Ok(())
+        }
+        _ => Err(format!("unknown capture command: {command}")),
+    }
+}
+
+fn start_live_packet_monitor(
+    path: PathBuf,
+    stop_flag: Arc<AtomicBool>,
+    header_printed: Arc<AtomicBool>,
+    last_seen_index: Arc<std::sync::atomic::AtomicU64>,
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        print_live_packet_header_once(&header_printed);
+
+        while !stop_flag.load(Ordering::Relaxed) {
+            let _ = flush_live_packets(&path, &header_printed, &last_seen_index);
+
+            thread::sleep(Duration::from_millis(400));
+        }
+    })
+}
+
+fn flush_live_packets(
+    path: &PathBuf,
+    header_printed: &Arc<AtomicBool>,
+    last_seen_index: &Arc<std::sync::atomic::AtomicU64>,
+) -> Result<(), String> {
+    let report = ListPacketsService::default().list(ListPacketsInput {
+        path: path.clone(),
+        limit: None,
+        filter: None,
+    })?;
+    print_live_packet_header_once(header_printed);
+
+    for packet in &report.packets {
+        let last_seen = last_seen_index.load(Ordering::Relaxed);
+        if last_seen != u64::MAX && packet.summary.index <= last_seen {
+            continue;
+        }
+        println!(
+            "{:<6} | {:<16} | {:<20} | {:<20} | {:<10} | {}",
+            packet.summary.index,
+            live_packet_time(
+                packet.summary.timestamp_seconds,
+                packet.summary.timestamp_fraction
+            ),
+            truncate_column(&packet.source, 20),
+            truncate_column(&packet.destination, 20),
+            truncate_column(&packet.protocol, 10),
+            packet.info
+        );
+        last_seen_index.store(packet.summary.index, Ordering::Relaxed);
+    }
+
+    Ok(())
+}
+
+fn print_live_packet_header_once(header_printed: &Arc<AtomicBool>) {
+    if header_printed.swap(true, Ordering::Relaxed) {
+        return;
+    }
+
+    println!();
+    println!(
+        "{:<6} | {:<16} | {:<20} | {:<20} | {:<10} | {}",
+        "Id", "Time", "Source", "Destination", "Protocol", "Info"
+    );
+    println!("{}", "-".repeat(96));
+}
+
+fn live_packet_time(seconds: u32, fraction: u32) -> String {
+    format!("{seconds}.{fraction:06}")
+}
+
+fn truncate_column(value: &str, width: usize) -> String {
+    if value.chars().count() <= width {
+        return value.to_string();
+    }
+
+    let truncated = value
+        .chars()
+        .take(width.saturating_sub(1))
+        .collect::<String>();
+    format!("{truncated}~")
+}
+
+fn stop_active_capture_if_needed(state: &mut ShellState) -> Result<(), String> {
+    if let Some(capture) = state.active_capture.take() {
+        let path = stop_capture(capture)?;
+        state.current_path = Some(path);
+    }
+    Ok(())
+}
+
+fn stop_capture(mut capture: ActiveCapture) -> Result<PathBuf, String> {
+    capture.stop_flag.store(true, Ordering::Relaxed);
+    let path = capture.session.path().to_path_buf();
+    let _ = flush_live_packets(&path, &capture.header_printed, &capture.last_seen_index);
+    if let Some(handle) = capture.monitor_handle.take() {
+        let _ = handle.join();
+    }
+    capture.session.stop().map_err(render_capture_error)
+}
+
+fn render_capture_error(error: CaptureError) -> String {
+    match error {
+        CaptureError::ToolUnavailable(message) => format!(
+            "capture tool unavailable: {message}\n\nhint: install a pcap-compatible capture tool or set ICESNIFF_CAPTURE_TOOL (and optionally ICESNIFF_CAPTURE_BACKEND) to match your capture provider"
+        ),
+        CaptureError::PermissionDenied(message) => format!(
+            "capture permission denied: {message}\n\nhint: grant packet-capture privileges (for example root/administrator, or Npcap/libpcap capture permissions)"
+        ),
+        CaptureError::DriverUnavailable(message) => format!(
+            "capture backend unavailable: {message}\n\nhint: ensure libpcap/Npcap is installed and its capture driver service is running"
+        ),
+        CaptureError::NoInterfacesAvailable => {
+            "no capture interfaces are available".to_string()
+        }
+        other => other.to_string(),
+    }
+}
+
+fn require_shell_capture_path(state: &ShellState) -> Result<PathBuf, String> {
+    state
+        .current_path
+        .clone()
+        .ok_or_else(|| "no capture is open; use `open <capture-file>` first".to_string())
+}
+
+fn parse_shell_words(input: &str) -> Result<Vec<String>, String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut quote = None::<char>;
+
+    for ch in input.chars() {
+        match quote {
+            Some(active_quote) if ch == active_quote => {
+                quote = None;
+            }
+            Some(_) => current.push(ch),
+            None if ch == '"' || ch == '\'' => {
+                quote = Some(ch);
+            }
+            None if ch.is_whitespace() => {
+                if !current.is_empty() {
+                    words.push(std::mem::take(&mut current));
+                }
+            }
+            None => current.push(ch),
+        }
+    }
+
+    if quote.is_some() {
+        return Err("unterminated quote in shell input".to_string());
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+
+    Ok(words)
+}
+
+fn output_mode_name(output_mode: &OutputMode) -> &'static str {
+    match output_mode {
+        OutputMode::Text => "text",
+        OutputMode::Json => "json",
+    }
+}
+
+fn render_capture_summary(output_mode: &OutputMode, report: &session_model::CaptureReport) {
+    match output_mode {
+        OutputMode::Text => println!("{}", render_capture_report(report)),
+        OutputMode::Json => println!("{}", render_capture_report_json(report)),
+    }
+}
+
+fn render_save_capture(output_mode: &OutputMode, report: &session_model::SaveCaptureReport) {
+    match output_mode {
+        OutputMode::Text => println!("{}", render_save_capture_report(report)),
+        OutputMode::Json => println!("{}", render_save_capture_report_json(report)),
+    }
+}
+
+fn render_packet_list(output_mode: &OutputMode, report: &session_model::PacketListReport) {
+    match output_mode {
+        OutputMode::Text => println!("{}", render_packet_list_report(report)),
+        OutputMode::Json => println!("{}", render_packet_list_report_json(report)),
+    }
+}
+
+fn render_packet_detail(output_mode: &OutputMode, report: &session_model::PacketDetailReport) {
+    match output_mode {
+        OutputMode::Text => println!("{}", render_packet_detail_report(report)),
+        OutputMode::Json => println!("{}", render_packet_detail_report_json(report)),
+    }
+}
+
+fn render_capture_stats(output_mode: &OutputMode, report: &session_model::CaptureStatsReport) {
+    match output_mode {
+        OutputMode::Text => println!("{}", render_capture_stats_report(report)),
+        OutputMode::Json => println!("{}", render_capture_stats_report_json(report)),
+    }
+}
+
+fn render_conversations(output_mode: &OutputMode, report: &session_model::ConversationReport) {
+    match output_mode {
+        OutputMode::Text => println!("{}", render_conversation_report(report)),
+        OutputMode::Json => println!("{}", render_conversation_report_json(report)),
+    }
+}
+
+fn render_streams(output_mode: &OutputMode, report: &session_model::StreamReport) {
+    match output_mode {
+        OutputMode::Text => println!("{}", render_stream_report(report)),
+        OutputMode::Json => println!("{}", render_stream_report_json(report)),
+    }
+}
+
+fn render_transactions(output_mode: &OutputMode, report: &session_model::TransactionReport) {
+    match output_mode {
+        OutputMode::Text => println!("{}", render_transaction_report(report)),
+        OutputMode::Json => println!("{}", render_transaction_report_json(report)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{parse_cli, Cli, Command, OutputMode};
+    use super::{parse_cli, parse_shell_words, Cli, Command, OutputMode};
     use std::path::PathBuf;
+
+    #[test]
+    fn defaults_to_shell_when_no_command_is_given() {
+        let cli = parse_cli(Vec::<String>::new()).expect("expected shell command");
+
+        assert_eq!(
+            cli,
+            Cli {
+                output_mode: OutputMode::Text,
+                command: Command::Shell { path: None },
+            }
+        );
+    }
+
+    #[test]
+    fn parses_shell_command_with_initial_capture() {
+        let cli = parse_cli(["shell".to_string(), "sample.pcap".to_string()])
+            .expect("expected shell command");
+
+        assert_eq!(
+            cli,
+            Cli {
+                output_mode: OutputMode::Text,
+                command: Command::Shell {
+                    path: Some(PathBuf::from("sample.pcap")),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn parses_save_command_with_filter() {
+        let cli = parse_cli([
+            "save".to_string(),
+            "input.pcap".to_string(),
+            "output.pcap".to_string(),
+            "--filter".to_string(),
+            "protocol=http".to_string(),
+        ])
+        .expect("expected save command to parse");
+
+        assert_eq!(
+            cli,
+            Cli {
+                output_mode: OutputMode::Text,
+                command: Command::Save {
+                    source_path: PathBuf::from("input.pcap"),
+                    output_path: PathBuf::from("output.pcap"),
+                    filter: Some("protocol=http".to_string()),
+                    stream_filter: None,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn parses_save_command_with_stream_filter() {
+        let cli = parse_cli([
+            "save".to_string(),
+            "input.pcap".to_string(),
+            "output.pcap".to_string(),
+            "--filter".to_string(),
+            "protocol=tcp".to_string(),
+            "--stream-filter".to_string(),
+            "stream.service=http".to_string(),
+        ])
+        .expect("expected save command to parse");
+
+        assert_eq!(
+            cli,
+            Cli {
+                output_mode: OutputMode::Text,
+                command: Command::Save {
+                    source_path: PathBuf::from("input.pcap"),
+                    output_path: PathBuf::from("output.pcap"),
+                    filter: Some("protocol=tcp".to_string()),
+                    stream_filter: Some("stream.service=http".to_string()),
+                },
+            }
+        );
+    }
 
     #[test]
     fn parses_json_stats_command() {
@@ -387,5 +1328,79 @@ mod tests {
                 },
             }
         );
+    }
+
+    #[test]
+    fn parses_stream_analysis_filter() {
+        let cli = parse_cli([
+            "streams".to_string(),
+            "capture.pcap".to_string(),
+            "--stream-filter".to_string(),
+            "stream.state=reset".to_string(),
+        ])
+        .expect("expected command to parse");
+
+        assert_eq!(
+            cli,
+            Cli {
+                output_mode: OutputMode::Text,
+                command: Command::StreamsWithAnalysisFilter {
+                    path: PathBuf::from("capture.pcap"),
+                    filter: None,
+                    stream_filter: Some("stream.state=reset".to_string()),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn parses_filter_for_transactions_command() {
+        let cli = parse_cli([
+            "transactions".to_string(),
+            "capture.pcap".to_string(),
+            "--filter".to_string(),
+            "protocol=tls".to_string(),
+        ])
+        .expect("expected command to parse");
+
+        assert_eq!(
+            cli,
+            Cli {
+                output_mode: OutputMode::Text,
+                command: Command::Transactions {
+                    path: PathBuf::from("capture.pcap"),
+                    filter: Some("protocol=tls".to_string()),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn parses_transaction_analysis_filter() {
+        let cli = parse_cli([
+            "transactions".to_string(),
+            "capture.pcap".to_string(),
+            "--transaction-filter".to_string(),
+            "tx.state=matched".to_string(),
+        ])
+        .expect("expected command to parse");
+
+        assert_eq!(
+            cli,
+            Cli {
+                output_mode: OutputMode::Text,
+                command: Command::TransactionsWithAnalysisFilter {
+                    path: PathBuf::from("capture.pcap"),
+                    filter: None,
+                    transaction_filter: Some("tx.state=matched".to_string()),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn parses_shell_words_with_quotes() {
+        let words = parse_shell_words("open \"capture file.pcap\"").expect("expected shell words");
+        assert_eq!(words, vec!["open", "capture file.pcap"]);
     }
 }

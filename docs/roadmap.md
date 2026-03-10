@@ -4,6 +4,9 @@
 
 - initial Rust workspace created
 - CLI app scaffolded
+- persistent interactive CLI shell added with a current-capture session model
+- shell-based live capture added through the system `tcpdump` tool with temp-PCAP handoff back into the current session
+- shared `capture-engine` crate added and wired into CLI live-capture lifecycle
 - shared crates for service, model, file IO, and output formatting added
 - documentation set started
 - first vertical slice implemented for capture metadata inspection
@@ -21,15 +24,92 @@
 - shared conversation summaries extended with service guessing and request/response counts
 - shared stream summaries added with client/server roles and basic transaction matching
 - shared stream summaries extended with TCP reassembly for HTTP transactions and TLS handshake records
+- shared stream summaries extended with retransmission/overlap/gap notes and multi-message HTTP counting
+- shared stream summaries extended with explicit out-of-order segment handling and notes
+- shared stream summaries extended with TCP session-state reporting from SYN/FIN/RST flags
+- shared stream summaries extended with TLS handshake progression state and reset-aware interpretation
+- shared stream summaries extended with repeated TLS handshake cycle tracking on long-lived connections
+- shared transaction enumeration added for reassembled HTTP request/response rows and TLS handshake rows
+- shared transaction enumeration extended with TLS certificate/finished progression per handshake row
+- shared transaction enumeration extended with structured HTTP header/body metadata and TLS record-version/SNI/message-list details
+- shared transaction enumeration extended with chunked HTTP body handling and TLS ALPN/alert/certificate-count details
+- shared stream summaries extended with session-level transaction timelines and TLS alert summaries
+- shared stream summaries extended with ordered session-event timelines and HTTP pipelining notes
+- shared filter semantics extended from flat clauses to boolean expressions with grouping and negation
+- shared filter semantics extended with field-aware HTTP, DNS, and TLS predicates
+- shared filter semantics extended with comparison and contains operators for analyst-facing predicates
+- shared filter semantics extended with additional HTTP/DNS/TLS fields and case-insensitive text matching
+- shared filter semantics extended with service, ip, and endpoint matching plus address-aware host matching
+- shared filter semantics extended into stream- and transaction-level row filters for analysis outputs
+- shared row filters extended with derived session flags, richer TLS counters, and HTTP/TLS alias predicates for analysis outputs
+- shared save/export service added for writing filtered capture output to PCAP
+- CLI integration parity tests added to verify text and JSON totals stay aligned across core shared commands
+- stable JSON schema tagging added across CLI `--json` reports (`schema_version: v1`)
+- stable CLI error-code prefixes and exit-status mapping added for scripting ergonomics
+- committed golden fixtures added for PCAP, PCAPNG, and malformed capture containers with fixture-backed parsing tests
 - CLI integration smoke tests added
 
-## Next implementation steps
+## Public alpha gap map (priority order)
 
-1. Replace manual CLI parsing with `clap` when dependency management is in place.
-2. Extend shared filter semantics beyond `protocol`, `port`, and `host` into compound analyst workflows.
-3. Extend the current HTTP and TLS stream reassembly into richer multi-message transaction analysis and broader TCP state handling.
-4. Extend PCAPNG support beyond the current section/interface/enhanced-packet flow into broader block coverage and richer timestamp option handling.
-5. Expand the current byte-range-aware field tree and early DNS/HTTP/TLS support into richer protocol-specific inspection and deeper protocol coverage.
-6. Replace inline sample generation with committed fixtures and broader CLI snapshot-style tests.
-7. Add the remaining planned crates: capture, analysis.
-8. Bootstrap `apps/desktop` once shared services can drive a real workflow.
+1. Capture engine (live traffic) - critical
+   - Cross-platform interface enumeration and start/stop capture.
+   - Permission/error handling UX including Npcap/libpcap differences.
+   - Consistent live-session model shared by CLI and desktop.
+2. Filter engine v2 - critical
+   - Composable expression language (`and`/`or`/`not`, parentheses).
+   - Deterministic parser and evaluator with tests.
+   - Shared semantics across list/stats/conversations/streams.
+3. Protocol depth (practical coverage) - critical
+   - Harden DNS/HTTP/TLS for common analyst workflows.
+   - Improve TCP reassembly edge cases (out-of-order, retransmits, gaps).
+   - Improve malformed and truncated packet handling.
+4. Desktop vertical slice (Tauri + Svelte) - high
+   - Packet table, details pane, and hex/bytes pane.
+   - Selection synchronization between packet rows, decoded fields, and byte ranges.
+   - Keep desktop thin: no business logic in UI.
+5. Save/export workflows - high
+   - Save filtered captures.
+   - Export selected packets and streams.
+   - Reuse shared output behavior via services.
+6. Test/fixtures expansion - high
+   - Golden fixtures for PCAP, PCAPNG, and malformed captures.
+   - Integration tests comparing CLI text and JSON outputs.
+   - Regression tests for filter semantics and stream reconstruction.
+7. Performance baseline - medium-high
+   - Profile parse/list/stats on medium and large captures.
+   - Add low-cost indexes/caching where benchmarks justify it.
+8. CLI ergonomics polish - medium
+   - Move to `clap`.
+   - Standardize error codes/messages for scripting.
+   - Add stable JSON schema versioning.
+9. Observability inside engine - medium
+   - Structured internal logging/events for debug mode.
+   - Better diagnostics for parser/filter failures.
+10. Security hardening posture - medium
+    - Treat capture files as untrusted input.
+    - Add parser/dissector fuzzing.
+    - Keep panic-safe boundaries and defensive decoding.
+
+## Current execution status
+
+- Started item #1 by adding a shared `crates/capture-engine` crate and moving CLI live-capture process management into that shared layer.
+- Added platform-aware default capture-tool resolution, explicit backend abstraction (`tcpdump`-style + `dumpcap`), and driver-aware capture error mapping (permission vs backend/runtime issues), plus stricter capture-stop validation and runtime-aware shell status reporting.
+- Moved capture session orchestration behind `crates/app-services` so CLI capture commands no longer call `capture-engine` directly.
+- Current backend still relies on external capture tooling and remains partial while deeper provider coverage and richer permission UX are implemented.
+- Started item #5 with shared save/export plumbing: `save` now writes packet-filtered or stream-filter-selected output to PCAP through shared services and shared stream semantics.
+- Started item #8 schema stabilization by adding top-level JSON schema version tags across CLI report output.
+- Started item #8 scripting ergonomics by adding stable CLI error-code prefixes and consistent exit-status categories.
+
+## 4-week execution sequence
+
+1. Week 1: finish capture-engine v1
+   - Add provider abstraction and OS-specific defaults (libpcap/tcpdump and Windows Npcap-compatible tool pathing).
+   - Improve permission/tool-missing guidance in CLI shell output.
+2. Week 2: protocol depth + fixtures
+   - Harden DNS/HTTP/TLS malformed/truncated paths.
+   - Add committed golden fixtures (PCAP + PCAPNG + malformed).
+3. Week 3: save/export + performance baseline
+   - Expand shared save/export beyond the initial `save` PCAP path to cover additional export targets and workflows.
+   - Capture baseline benchmarks and apply only benchmark-backed optimizations.
+4. Week 4: desktop vertical slice bootstrapping
+   - Implement packet table + detail + hex pane with byte-range selection sync using shared services.

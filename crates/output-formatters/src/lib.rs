@@ -1,8 +1,11 @@
 use session_model::{
     ApplicationLayerSummary, CaptureFormat, CaptureReport, CaptureStatsReport, ConversationReport,
     FieldNode, LinkLayerSummary, NamedCount, NetworkLayerSummary, PacketDetailReport,
-    PacketListReport, StreamReport, TimestampPrecision, TransportLayerSummary,
+    PacketListReport, SaveCaptureReport, StreamReport, TimestampPrecision, TransactionDetail,
+    TransactionReport, TransportLayerSummary,
 };
+
+const JSON_SCHEMA_VERSION: &str = "v1";
 
 pub fn render_capture_report(report: &CaptureReport) -> String {
     let format = match report.format {
@@ -38,6 +41,30 @@ notes:
 {notes}",
         report.path.display(),
         report.size_bytes,
+    )
+}
+
+pub fn render_save_capture_report(report: &SaveCaptureReport) -> String {
+    let format = match report.format {
+        CaptureFormat::Pcap => "pcap",
+        CaptureFormat::PcapNg => "pcapng",
+        CaptureFormat::Unknown => "unknown",
+    };
+    let filter = report.filter.as_deref().unwrap_or("none");
+    let stream_filter = report.stream_filter.as_deref().unwrap_or("none");
+
+    format!(
+        "\
+Capture saved
+  source_path: {}
+  output_path: {}
+  format: {format}
+  packets_written: {}
+  filter: {filter}
+  stream_filter: {stream_filter}",
+        report.source_path.display(),
+        report.output_path.display(),
+        report.packets_written,
     )
 }
 
@@ -249,13 +276,27 @@ pub fn render_stream_report(report: &StreamReport) -> String {
         } else {
             format!(" notes={}", row.notes.join(" | "))
         };
+        let tls_alerts = if row.tls_alerts.is_empty() {
+            "none".to_string()
+        } else {
+            row.tls_alerts.join(",")
+        };
+        let timeline = if row.transaction_timeline.is_empty() {
+            "none".to_string()
+        } else {
+            row.transaction_timeline.join(" | ")
+        };
         lines.push(format!(
-            "  - service={} proto={} client={} server={} packets={} c_to_s={} s_to_c={} requests={} responses={} matched={} unmatched_requests={} unmatched_responses={} bytes={} first_packet={} last_packet={}{}",
+            "  - service={} proto={} client={} server={} packets={} syn={} fin={} rst={} state={} c_to_s={} s_to_c={} requests={} responses={} matched={} unmatched_requests={} unmatched_responses={} tls_client_hellos={} tls_server_hellos={} tls_certificates={} tls_finished={} tls_cycles={} tls_incomplete={} tls_state={} tls_alert_count={} tls_alerts={} bytes={} first_packet={} last_packet={} timeline={}{}",
             row.service,
             row.protocol,
             row.client,
             row.server,
             row.packets,
+            row.syn_packets,
+            row.fin_packets,
+            row.rst_packets,
+            row.session_state,
             row.client_to_server_packets,
             row.server_to_client_packets,
             row.request_count,
@@ -263,9 +304,66 @@ pub fn render_stream_report(report: &StreamReport) -> String {
             row.matched_transactions,
             row.unmatched_requests,
             row.unmatched_responses,
+            row.tls_client_hellos,
+            row.tls_server_hellos,
+            row.tls_certificates,
+            row.tls_finished_messages,
+            row.tls_handshake_cycles,
+            row.tls_incomplete_handshakes,
+            row.tls_handshake_state,
+            row.tls_alert_count,
+            tls_alerts,
             row.total_captured_bytes,
             row.first_packet_index,
             row.last_packet_index,
+            timeline,
+            notes,
+        ));
+    }
+
+    lines.join("\n")
+}
+
+pub fn render_transaction_report(report: &TransactionReport) -> String {
+    let format = match report.format {
+        CaptureFormat::Pcap => "pcap",
+        CaptureFormat::PcapNg => "pcapng",
+        CaptureFormat::Unknown => "unknown",
+    };
+
+    let mut lines = vec![
+        "Transactions".to_string(),
+        format!("  path: {}", report.path.display()),
+        format!("  format: {format}"),
+        format!("  total_transactions: {}", report.total_transactions),
+        "items:".to_string(),
+    ];
+
+    if report.transactions.is_empty() {
+        lines.push("  - none".to_string());
+        return lines.join("\n");
+    }
+
+    for row in &report.transactions {
+        let notes = if row.notes.is_empty() {
+            String::new()
+        } else {
+            format!(" notes={}", row.notes.join(" | "))
+        };
+        let request_details = render_transaction_details(&row.request_details);
+        let response_details = render_transaction_details(&row.response_details);
+        lines.push(format!(
+            "  - service={} proto={} client={} server={} sequence={} request={} request_details={} response={} response_details={} state={}{}",
+            row.service,
+            row.protocol,
+            row.client,
+            row.server,
+            row.sequence,
+            row.request_summary,
+            request_details,
+            row.response_summary,
+            response_details,
+            row.state,
             notes,
         ));
     }
@@ -275,7 +373,8 @@ pub fn render_stream_report(report: &StreamReport) -> String {
 
 pub fn render_capture_report_json(report: &CaptureReport) -> String {
     format!(
-        "{{\"path\":\"{}\",\"format\":\"{}\",\"size_bytes\":{},\"packet_count_hint\":{},\"notes\":[{}]}}",
+        "{{\"schema_version\":\"{}\",\"path\":\"{}\",\"format\":\"{}\",\"size_bytes\":{},\"packet_count_hint\":{},\"notes\":[{}]}}",
+        JSON_SCHEMA_VERSION,
         json_escape(&report.path.display().to_string()),
         capture_format_name(&report.format),
         report.size_bytes,
@@ -292,9 +391,31 @@ pub fn render_capture_report_json(report: &CaptureReport) -> String {
     )
 }
 
+pub fn render_save_capture_report_json(report: &SaveCaptureReport) -> String {
+    format!(
+        "{{\"schema_version\":\"{}\",\"source_path\":\"{}\",\"output_path\":\"{}\",\"format\":\"{}\",\"packets_written\":{},\"filter\":{},\"stream_filter\":{}}}",
+        JSON_SCHEMA_VERSION,
+        json_escape(&report.source_path.display().to_string()),
+        json_escape(&report.output_path.display().to_string()),
+        capture_format_name(&report.format),
+        report.packets_written,
+        report
+            .filter
+            .as_ref()
+            .map(|value| format!("\"{}\"", json_escape(value)))
+            .unwrap_or_else(|| "null".to_string()),
+        report
+            .stream_filter
+            .as_ref()
+            .map(|value| format!("\"{}\"", json_escape(value)))
+            .unwrap_or_else(|| "null".to_string()),
+    )
+}
+
 pub fn render_packet_list_report_json(report: &PacketListReport) -> String {
     format!(
-        "{{\"path\":\"{}\",\"format\":\"{}\",\"packets_shown\":{},\"total_packets\":{},\"packets\":[{}]}}",
+        "{{\"schema_version\":\"{}\",\"path\":\"{}\",\"format\":\"{}\",\"packets_shown\":{},\"total_packets\":{},\"packets\":[{}]}}",
+        JSON_SCHEMA_VERSION,
         json_escape(&report.path.display().to_string()),
         capture_format_name(&report.format),
         report.packets.len(),
@@ -324,7 +445,8 @@ pub fn render_packet_list_report_json(report: &PacketListReport) -> String {
 
 pub fn render_packet_detail_report_json(report: &PacketDetailReport) -> String {
     format!(
-        "{{\"path\":\"{}\",\"format\":\"{}\",\"packet\":{{\"index\":{},\"timestamp_seconds\":{},\"timestamp_fraction\":{},\"timestamp_precision\":\"{}\",\"captured_length\":{},\"original_length\":{},\"raw_bytes\":[{}],\"link\":{},\"network\":{},\"transport\":{},\"application\":{},\"fields\":[{}],\"notes\":[{}]}}}}",
+        "{{\"schema_version\":\"{}\",\"path\":\"{}\",\"format\":\"{}\",\"packet\":{{\"index\":{},\"timestamp_seconds\":{},\"timestamp_fraction\":{},\"timestamp_precision\":\"{}\",\"captured_length\":{},\"original_length\":{},\"raw_bytes\":[{}],\"link\":{},\"network\":{},\"transport\":{},\"application\":{},\"fields\":[{}],\"notes\":[{}]}}}}",
+        JSON_SCHEMA_VERSION,
         json_escape(&report.path.display().to_string()),
         capture_format_name(&report.format),
         report.packet.summary.index,
@@ -357,7 +479,8 @@ pub fn render_packet_detail_report_json(report: &PacketDetailReport) -> String {
 
 pub fn render_conversation_report_json(report: &ConversationReport) -> String {
     format!(
-        "{{\"path\":\"{}\",\"format\":\"{}\",\"total_conversations\":{},\"conversations\":[{}]}}",
+        "{{\"schema_version\":\"{}\",\"path\":\"{}\",\"format\":\"{}\",\"total_conversations\":{},\"conversations\":[{}]}}",
+        JSON_SCHEMA_VERSION,
         json_escape(&report.path.display().to_string()),
         capture_format_name(&report.format),
         report.total_conversations,
@@ -388,7 +511,8 @@ pub fn render_conversation_report_json(report: &ConversationReport) -> String {
 
 pub fn render_stream_report_json(report: &StreamReport) -> String {
     format!(
-        "{{\"path\":\"{}\",\"format\":\"{}\",\"total_streams\":{},\"streams\":[{}]}}",
+        "{{\"schema_version\":\"{}\",\"path\":\"{}\",\"format\":\"{}\",\"total_streams\":{},\"streams\":[{}]}}",
+        JSON_SCHEMA_VERSION,
         json_escape(&report.path.display().to_string()),
         capture_format_name(&report.format),
         report.total_streams,
@@ -397,12 +521,16 @@ pub fn render_stream_report_json(report: &StreamReport) -> String {
             .iter()
             .map(|row| {
                 format!(
-                    "{{\"service\":\"{}\",\"protocol\":\"{}\",\"client\":\"{}\",\"server\":\"{}\",\"packets\":{},\"client_to_server_packets\":{},\"server_to_client_packets\":{},\"request_count\":{},\"response_count\":{},\"matched_transactions\":{},\"unmatched_requests\":{},\"unmatched_responses\":{},\"total_captured_bytes\":{},\"first_packet_index\":{},\"last_packet_index\":{},\"notes\":[{}]}}",
+                    "{{\"service\":\"{}\",\"protocol\":\"{}\",\"client\":\"{}\",\"server\":\"{}\",\"packets\":{},\"syn_packets\":{},\"fin_packets\":{},\"rst_packets\":{},\"session_state\":\"{}\",\"client_to_server_packets\":{},\"server_to_client_packets\":{},\"request_count\":{},\"response_count\":{},\"matched_transactions\":{},\"unmatched_requests\":{},\"unmatched_responses\":{},\"tls_client_hellos\":{},\"tls_server_hellos\":{},\"tls_certificates\":{},\"tls_finished_messages\":{},\"tls_handshake_cycles\":{},\"tls_incomplete_handshakes\":{},\"tls_handshake_state\":\"{}\",\"tls_alert_count\":{},\"tls_alerts\":[{}],\"total_captured_bytes\":{},\"first_packet_index\":{},\"last_packet_index\":{},\"transaction_timeline\":[{}],\"notes\":[{}]}}",
                     json_escape(&row.service),
                     json_escape(&row.protocol),
                     json_escape(&row.client),
                     json_escape(&row.server),
                     row.packets,
+                    row.syn_packets,
+                    row.fin_packets,
+                    row.rst_packets,
+                    json_escape(&row.session_state),
                     row.client_to_server_packets,
                     row.server_to_client_packets,
                     row.request_count,
@@ -410,9 +538,27 @@ pub fn render_stream_report_json(report: &StreamReport) -> String {
                     row.matched_transactions,
                     row.unmatched_requests,
                     row.unmatched_responses,
+                    row.tls_client_hellos,
+                    row.tls_server_hellos,
+                    row.tls_certificates,
+                    row.tls_finished_messages,
+                    row.tls_handshake_cycles,
+                    row.tls_incomplete_handshakes,
+                    json_escape(&row.tls_handshake_state),
+                    row.tls_alert_count,
+                    row.tls_alerts
+                        .iter()
+                        .map(|alert| format!("\"{}\"", json_escape(alert)))
+                        .collect::<Vec<_>>()
+                        .join(","),
                     row.total_captured_bytes,
                     row.first_packet_index,
                     row.last_packet_index,
+                    row.transaction_timeline
+                        .iter()
+                        .map(|entry| format!("\"{}\"", json_escape(entry)))
+                        .collect::<Vec<_>>()
+                        .join(","),
                     row.notes
                         .iter()
                         .map(|note| format!("\"{}\"", json_escape(note)))
@@ -425,9 +571,71 @@ pub fn render_stream_report_json(report: &StreamReport) -> String {
     )
 }
 
+pub fn render_transaction_report_json(report: &TransactionReport) -> String {
+    format!(
+        "{{\"schema_version\":\"{}\",\"path\":\"{}\",\"format\":\"{}\",\"total_transactions\":{},\"transactions\":[{}]}}",
+        JSON_SCHEMA_VERSION,
+        json_escape(&report.path.display().to_string()),
+        capture_format_name(&report.format),
+        report.total_transactions,
+        report
+            .transactions
+            .iter()
+            .map(|row| {
+                format!(
+                    "{{\"service\":\"{}\",\"protocol\":\"{}\",\"client\":\"{}\",\"server\":\"{}\",\"sequence\":{},\"request_summary\":\"{}\",\"request_details\":[{}],\"response_summary\":\"{}\",\"response_details\":[{}],\"state\":\"{}\",\"notes\":[{}]}}",
+                    json_escape(&row.service),
+                    json_escape(&row.protocol),
+                    json_escape(&row.client),
+                    json_escape(&row.server),
+                    row.sequence,
+                    json_escape(&row.request_summary),
+                    render_transaction_details_json(&row.request_details),
+                    json_escape(&row.response_summary),
+                    render_transaction_details_json(&row.response_details),
+                    json_escape(&row.state),
+                    row.notes
+                        .iter()
+                        .map(|note| format!("\"{}\"", json_escape(note)))
+                        .collect::<Vec<_>>()
+                        .join(","),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+    )
+}
+
+fn render_transaction_details(details: &[TransactionDetail]) -> String {
+    if details.is_empty() {
+        "none".to_string()
+    } else {
+        details
+            .iter()
+            .map(|detail| format!("{}={}", detail.key, detail.value))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+}
+
+fn render_transaction_details_json(details: &[TransactionDetail]) -> String {
+    details
+        .iter()
+        .map(|detail| {
+            format!(
+                "{{\"key\":\"{}\",\"value\":\"{}\"}}",
+                json_escape(&detail.key),
+                json_escape(&detail.value)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 pub fn render_capture_stats_report_json(report: &CaptureStatsReport) -> String {
     format!(
-        "{{\"path\":\"{}\",\"format\":\"{}\",\"total_packets\":{},\"total_captured_bytes\":{},\"average_captured_bytes\":{},\"link_layer_counts\":[{}],\"network_layer_counts\":[{}],\"transport_layer_counts\":[{}]}}",
+        "{{\"schema_version\":\"{}\",\"path\":\"{}\",\"format\":\"{}\",\"total_packets\":{},\"total_captured_bytes\":{},\"average_captured_bytes\":{},\"link_layer_counts\":[{}],\"network_layer_counts\":[{}],\"transport_layer_counts\":[{}]}}",
+        JSON_SCHEMA_VERSION,
         json_escape(&report.path.display().to_string()),
         capture_format_name(&report.format),
         report.total_packets,
