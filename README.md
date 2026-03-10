@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/darkbanner.png" alt="IceSniff app banner" width="1000">
+  <img src="media/dark_banner.png" alt="IceSniff app banner" width="1000">
 </p>
 
 # IceSniff
