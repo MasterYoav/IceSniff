@@ -1,10 +1,14 @@
-<p align="center">
-  <img src="media/icesniff.png" alt="IceSniff app icon" width="140">
-</p>
-
 # IceSniff
 
+<p align="center">
+  <img src="media/icesniff_dark.png" alt="IceSniff app icon" width="140">
+</p>
+
 IceSniff is a modern, open-source network packet analyzer built for clarity, speed, and cross-platform usability.
+
+[![Svelte](https://img.shields.io/badge/Svelte-%23f1413d.svg?logo=svelte&logoColor=white)](#)
+[![Tauri](https://img.shields.io/badge/Tauri-24C8D8?logo=tauri&logoColor=fff)](#)
+[![Rust](https://img.shields.io/badge/Rust-%23000000.svg?e&logo=rust&logoColor=white)](#)
 
 License: MIT. See `LICENSE`.
 
