@@ -1,0 +1,15 @@
+[package]
+name = "app-services"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+file-io = { path = "../file-io" }
+parser-core = { path = "../parser-core" }
+session-model = { path = "../session-model" }
+
+[lints]
+workspace = true

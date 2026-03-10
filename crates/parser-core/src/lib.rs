@@ -1,0 +1,268 @@
+use std::collections::BTreeMap;
+use std::path::Path;
+
+use filter_engine::matches_filter;
+use protocol_dissectors::decode_packet;
+use session_model::{
+    ApplicationLayerSummary, CaptureFormat, CaptureStatsReport, CapturedPacket, DecodedPacket,
+    LinkLayerSummary, LoadedCapture, NamedCount, NetworkLayerSummary, PacketDetailReport,
+    PacketListReport, PacketListRow, TransportLayerSummary,
+};
+
+pub fn list_packets(
+    capture: &LoadedCapture,
+    limit: Option<usize>,
+    filter: Option<&str>,
+) -> Result<PacketListReport, String> {
+    let decoded = filtered_packets(capture, filter)?;
+    let total_packets = decoded.len() as u64;
+    let packets = match limit {
+        Some(limit) => decoded
+            .into_iter()
+            .take(limit)
+            .map(packet_list_row)
+            .collect(),
+        None => decoded.into_iter().map(packet_list_row).collect(),
+    };
+
+    Ok(PacketListReport {
+        path: capture.path.clone(),
+        format: capture.format.clone(),
+        total_packets,
+        packets,
+    })
+}
+
+pub fn inspect_packet(
+    capture: &LoadedCapture,
+    packet_index: u64,
+) -> Result<PacketDetailReport, String> {
+    let packet = capture
+        .packets
+        .iter()
+        .find(|packet| packet.summary.index == packet_index)
+        .ok_or_else(|| format!("packet index {packet_index} does not exist"))?;
+
+    Ok(PacketDetailReport {
+        path: capture.path.clone(),
+        format: capture.format.clone(),
+        packet: decode_captured_packet(packet),
+    })
+}
+
+pub fn capture_stats(
+    capture: &LoadedCapture,
+    filter: Option<&str>,
+) -> Result<CaptureStatsReport, String> {
+    let decoded = filtered_packets(capture, filter)?;
+    let total_packets = decoded.len() as u64;
+    let total_captured_bytes = decoded
+        .iter()
+        .map(|packet| u64::from(packet.summary.captured_length))
+        .sum::<u64>();
+    let average_captured_bytes = if total_packets == 0 {
+        0
+    } else {
+        total_captured_bytes / total_packets
+    };
+
+    let mut link_counts = BTreeMap::new();
+    let mut network_counts = BTreeMap::new();
+    let mut transport_counts = BTreeMap::new();
+
+    for decoded in &decoded {
+        increment_count(&mut link_counts, link_layer_name(&decoded.link));
+        increment_count(
+            &mut network_counts,
+            network_layer_name(decoded.network.as_ref()),
+        );
+        increment_count(
+            &mut transport_counts,
+            transport_layer_name(decoded.transport.as_ref()),
+        );
+    }
+
+    Ok(CaptureStatsReport {
+        path: capture.path.clone(),
+        format: capture.format.clone(),
+        total_packets,
+        total_captured_bytes,
+        average_captured_bytes,
+        link_layer_counts: into_named_counts(link_counts),
+        network_layer_counts: into_named_counts(network_counts),
+        transport_layer_counts: into_named_counts(transport_counts),
+    })
+}
+
+pub fn decode_captured_packet(packet: &CapturedPacket) -> DecodedPacket {
+    decode_packet(packet.summary.clone(), &packet.raw_bytes, packet.linktype)
+}
+
+pub fn inspect_metadata(
+    path: &Path,
+    format: CaptureFormat,
+    packet_count_hint: Option<u64>,
+    size_bytes: u64,
+) -> session_model::CaptureReport {
+    session_model::CaptureReport {
+        path: path.to_path_buf(),
+        size_bytes,
+        format: format.clone(),
+        packet_count_hint,
+        notes: metadata_notes(&format, size_bytes),
+    }
+}
+
+fn metadata_notes(format: &CaptureFormat, size_bytes: u64) -> Vec<String> {
+    let mut notes = Vec::new();
+    match format {
+        CaptureFormat::Pcap => {
+            notes.push("Detected legacy PCAP container from magic number.".to_string());
+            if size_bytes < 24 {
+                notes.push("File is shorter than a complete PCAP global header.".to_string());
+            } else {
+                notes.push(
+                    "Packet listing is available through the shared PCAP reader.".to_string(),
+                );
+                notes.push("Packet detail inspection is available for PCAP with minimal protocol decoding.".to_string());
+            }
+        }
+        CaptureFormat::PcapNg => {
+            notes.push("Detected PCAPNG section header block magic number.".to_string());
+            notes.push("Packet listing is available through the shared PCAPNG reader.".to_string());
+            notes.push("Packet detail inspection is available for common PCAPNG interface and enhanced-packet blocks.".to_string());
+        }
+        CaptureFormat::Unknown => {
+            notes.push(
+                "Unknown capture container; packet decoding is not implemented yet.".to_string(),
+            );
+        }
+    }
+    if size_bytes == 0 {
+        notes.push("File is empty.".to_string());
+    }
+    notes
+}
+
+fn filtered_packets(
+    capture: &LoadedCapture,
+    filter: Option<&str>,
+) -> Result<Vec<DecodedPacket>, String> {
+    let mut packets = Vec::new();
+    for packet in &capture.packets {
+        let decoded = decode_captured_packet(packet);
+        if let Some(filter) = filter {
+            if !matches_filter(&decoded, filter)? {
+                continue;
+            }
+        }
+        packets.push(decoded);
+    }
+    Ok(packets)
+}
+
+fn packet_list_row(packet: DecodedPacket) -> PacketListRow {
+    let (source, destination) = match &packet.network {
+        Some(NetworkLayerSummary::Ipv4(ipv4)) => {
+            (ipv4.source_ip.clone(), ipv4.destination_ip.clone())
+        }
+        Some(NetworkLayerSummary::Arp(arp)) => (
+            arp.sender_protocol_address.clone(),
+            arp.target_protocol_address.clone(),
+        ),
+        None => ("n/a".to_string(), "n/a".to_string()),
+    };
+
+    let protocol = if let Some(app) = &packet.application {
+        match app {
+            ApplicationLayerSummary::Dns(_) => "dns".to_string(),
+            ApplicationLayerSummary::Http(_) => "http".to_string(),
+            ApplicationLayerSummary::TlsHandshake(_) => "tls".to_string(),
+        }
+    } else {
+        match &packet.transport {
+            Some(TransportLayerSummary::Tcp(_)) => "tcp".to_string(),
+            Some(TransportLayerSummary::Udp(_)) => "udp".to_string(),
+            Some(TransportLayerSummary::Icmp(_)) => "icmp".to_string(),
+            None => match &packet.network {
+                Some(NetworkLayerSummary::Arp(_)) => "arp".to_string(),
+                Some(NetworkLayerSummary::Ipv4(_)) => "ipv4".to_string(),
+                None => "unknown".to_string(),
+            },
+        }
+    };
+
+    let info = match &packet.application {
+        Some(ApplicationLayerSummary::Dns(dns)) => format!(
+            "dns {}",
+            dns.questions.first().map(String::as_str).unwrap_or("query")
+        ),
+        Some(ApplicationLayerSummary::Http(http)) => format!(
+            "{} {}",
+            http.method.as_deref().unwrap_or("http"),
+            http.path.as_deref().unwrap_or("/")
+        ),
+        Some(ApplicationLayerSummary::TlsHandshake(tls)) => format!(
+            "tls {} {}",
+            tls.handshake_type,
+            tls.server_name.as_deref().unwrap_or("")
+        )
+        .trim()
+        .to_string(),
+        None => match &packet.transport {
+            Some(TransportLayerSummary::Tcp(tcp)) => {
+                format!("{} -> {}", tcp.source_port, tcp.destination_port)
+            }
+            Some(TransportLayerSummary::Udp(udp)) => {
+                format!("{} -> {}", udp.source_port, udp.destination_port)
+            }
+            Some(TransportLayerSummary::Icmp(icmp)) => {
+                format!("type={} code={}", icmp.icmp_type, icmp.code)
+            }
+            None => "n/a".to_string(),
+        },
+    };
+
+    PacketListRow {
+        summary: packet.summary,
+        source,
+        destination,
+        protocol,
+        info,
+    }
+}
+
+fn increment_count(counts: &mut BTreeMap<String, u64>, key: String) {
+    *counts.entry(key).or_insert(0) += 1;
+}
+
+fn into_named_counts(counts: BTreeMap<String, u64>) -> Vec<NamedCount> {
+    counts
+        .into_iter()
+        .map(|(name, count)| NamedCount { name, count })
+        .collect()
+}
+
+fn link_layer_name(link: &LinkLayerSummary) -> String {
+    match link {
+        LinkLayerSummary::Ethernet(_) => "ethernet".to_string(),
+        LinkLayerSummary::Unknown => "unknown".to_string(),
+    }
+}
+
+fn network_layer_name(network: Option<&NetworkLayerSummary>) -> String {
+    match network {
+        Some(NetworkLayerSummary::Arp(_)) => "arp".to_string(),
+        Some(NetworkLayerSummary::Ipv4(_)) => "ipv4".to_string(),
+        None => "none".to_string(),
+    }
+}
+
+fn transport_layer_name(transport: Option<&TransportLayerSummary>) -> String {
+    match transport {
+        Some(TransportLayerSummary::Tcp(_)) => "tcp".to_string(),
+        Some(TransportLayerSummary::Udp(_)) => "udp".to_string(),
+        Some(TransportLayerSummary::Icmp(_)) => "icmp".to_string(),
+        None => "none".to_string(),
+    }
+}

@@ -1,0 +1,15 @@
+[package]
+name = "parser-core"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+filter-engine = { path = "../filter-engine" }
+protocol-dissectors = { path = "../protocol-dissectors" }
+session-model = { path = "../session-model" }
+
+[lints]
+workspace = true
