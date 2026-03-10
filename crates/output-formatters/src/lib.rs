@@ -1,7 +1,7 @@
 use session_model::{
-    ApplicationLayerSummary, CaptureFormat, CaptureReport, CaptureStatsReport, FieldNode,
-    LinkLayerSummary, NamedCount, NetworkLayerSummary, PacketDetailReport, PacketListReport,
-    TimestampPrecision, TransportLayerSummary,
+    ApplicationLayerSummary, CaptureFormat, CaptureReport, CaptureStatsReport, ConversationReport,
+    FieldNode, LinkLayerSummary, NamedCount, NetworkLayerSummary, PacketDetailReport,
+    PacketListReport, TimestampPrecision, TransportLayerSummary,
 };
 
 pub fn render_capture_report(report: &CaptureReport) -> String {
@@ -182,6 +182,42 @@ pub fn render_capture_stats_report(report: &CaptureStatsReport) -> String {
     .join("\n")
 }
 
+pub fn render_conversation_report(report: &ConversationReport) -> String {
+    let format = match report.format {
+        CaptureFormat::Pcap => "pcap",
+        CaptureFormat::PcapNg => "pcapng",
+        CaptureFormat::Unknown => "unknown",
+    };
+
+    let mut lines = vec![
+        "Conversations".to_string(),
+        format!("  path: {}", report.path.display()),
+        format!("  format: {format}"),
+        format!("  total_conversations: {}", report.total_conversations),
+        "items:".to_string(),
+    ];
+
+    if report.conversations.is_empty() {
+        lines.push("  - none".to_string());
+        return lines.join("\n");
+    }
+
+    for row in &report.conversations {
+        lines.push(format!(
+            "  - proto={} endpoints={} <-> {} packets={} bytes={} first_packet={} last_packet={}",
+            row.protocol,
+            row.endpoint_a,
+            row.endpoint_b,
+            row.packets,
+            row.total_captured_bytes,
+            row.first_packet_index,
+            row.last_packet_index,
+        ));
+    }
+
+    lines.join("\n")
+}
+
 pub fn render_capture_report_json(report: &CaptureReport) -> String {
     format!(
         "{{\"path\":\"{}\",\"format\":\"{}\",\"size_bytes\":{},\"packet_count_hint\":{},\"notes\":[{}]}}",
@@ -259,6 +295,32 @@ pub fn render_packet_detail_report_json(report: &PacketDetailReport) -> String {
             .notes
             .iter()
             .map(|note| format!("\"{}\"", json_escape(note)))
+            .collect::<Vec<_>>()
+            .join(","),
+    )
+}
+
+pub fn render_conversation_report_json(report: &ConversationReport) -> String {
+    format!(
+        "{{\"path\":\"{}\",\"format\":\"{}\",\"total_conversations\":{},\"conversations\":[{}]}}",
+        json_escape(&report.path.display().to_string()),
+        capture_format_name(&report.format),
+        report.total_conversations,
+        report
+            .conversations
+            .iter()
+            .map(|row| {
+                format!(
+                    "{{\"protocol\":\"{}\",\"endpoint_a\":\"{}\",\"endpoint_b\":\"{}\",\"packets\":{},\"total_captured_bytes\":{},\"first_packet_index\":{},\"last_packet_index\":{}}}",
+                    json_escape(&row.protocol),
+                    json_escape(&row.endpoint_a),
+                    json_escape(&row.endpoint_b),
+                    row.packets,
+                    row.total_captured_bytes,
+                    row.first_packet_index,
+                    row.last_packet_index,
+                )
+            })
             .collect::<Vec<_>>()
             .join(","),
     )

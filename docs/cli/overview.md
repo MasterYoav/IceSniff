@@ -8,6 +8,7 @@ The CLI is the first production interface for IceSniff.
 - `list <capture-file> [limit] [--filter <expr>]`: enumerates PCAP and PCAPNG packet records through shared services
 - `show-packet <capture-file> <packet-index>`: decodes one PCAP or PCAPNG packet through shared services
 - `stats <capture-file> [--filter <expr>]`: reports packet counts, byte totals, and protocol-family summaries
+- `conversations <capture-file> [--filter <expr>]`: summarizes bidirectional flows across shared decoded packets
 
 All commands support `--json` for machine-readable output.
 
@@ -23,6 +24,14 @@ The shared filter engine currently supports:
 - `protocol=dns|http|tls|tcp|udp|icmp|ipv4|arp`
 - `port=<number>`
 - `host=<name-or-address>`
+
+`conversations` currently groups traffic into bidirectional rows using:
+
+- application or transport protocol
+- normalized endpoint pairs
+- packet counts
+- captured-byte totals
+- first and last packet indexes
 
 `show-packet` currently includes:
 

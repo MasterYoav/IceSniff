@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
 use file_io::{capture_file_size, read_capture};
-use parser_core::{capture_stats, inspect_metadata, inspect_packet, list_packets};
-use session_model::{CaptureReport, CaptureStatsReport, PacketDetailReport, PacketListReport};
+use parser_core::{capture_stats, conversations, inspect_metadata, inspect_packet, list_packets};
+use session_model::{
+    CaptureReport, CaptureStatsReport, ConversationReport, PacketDetailReport, PacketListReport,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InspectCaptureInput {
@@ -71,5 +73,21 @@ impl CaptureStatsService {
     pub fn stats(&self, input: CaptureStatsInput) -> Result<CaptureStatsReport, String> {
         let capture = read_capture(&input.path)?;
         capture_stats(&capture, input.filter.as_deref())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationsInput {
+    pub path: PathBuf,
+    pub filter: Option<String>,
+}
+
+#[derive(Debug, Default)]
+pub struct ConversationsService;
+
+impl ConversationsService {
+    pub fn list(&self, input: ConversationsInput) -> Result<ConversationReport, String> {
+        let capture = read_capture(&input.path)?;
+        conversations(&capture, input.filter.as_deref())
     }
 }

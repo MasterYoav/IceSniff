@@ -199,6 +199,23 @@ fn stats_command_filters_by_port() {
     assert!(stdout.contains("transport: tcp=1"));
 }
 
+#[test]
+fn conversations_command_groups_bidirectional_dns_flow() {
+    let capture = wrap_pcap_packets(&[sample_dns_frame(), sample_dns_response_frame()]);
+    let path = write_temp_capture("pcap", &capture);
+    let output = Command::new(env!("CARGO_BIN_EXE_icesniff-cli"))
+        .args(["--json", "conversations", &path, "--filter", "protocol=dns"])
+        .output()
+        .expect("failed to run conversations command");
+    fs::remove_file(&path).expect("failed to remove dns conversation sample");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout was not utf-8");
+    assert!(stdout.contains("\"total_conversations\":1"));
+    assert!(stdout.contains("\"protocol\":\"dns\""));
+    assert!(stdout.contains("\"packets\":2"));
+}
+
 fn sample_pcap_bytes() -> Vec<u8> {
     let mut bytes = Vec::new();
 
@@ -227,6 +244,10 @@ fn sample_pcap_bytes() -> Vec<u8> {
 }
 
 fn wrap_pcap_packet(packet: &[u8]) -> Vec<u8> {
+    wrap_pcap_packets(&[packet.to_vec()])
+}
+
+fn wrap_pcap_packets(packets: &[Vec<u8>]) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&[0xd4, 0xc3, 0xb2, 0xa1]);
     bytes.extend_from_slice(&2u16.to_le_bytes());
@@ -235,11 +256,15 @@ fn wrap_pcap_packet(packet: &[u8]) -> Vec<u8> {
     bytes.extend_from_slice(&0u32.to_le_bytes());
     bytes.extend_from_slice(&65535u32.to_le_bytes());
     bytes.extend_from_slice(&1u32.to_le_bytes());
-    bytes.extend_from_slice(&1u32.to_le_bytes());
-    bytes.extend_from_slice(&2u32.to_le_bytes());
-    bytes.extend_from_slice(&(packet.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(&(packet.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(packet);
+
+    for (index, packet) in packets.iter().enumerate() {
+        bytes.extend_from_slice(&((index as u32) + 1).to_le_bytes());
+        bytes.extend_from_slice(&((index as u32) + 2).to_le_bytes());
+        bytes.extend_from_slice(&(packet.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(packet.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(packet);
+    }
+
     bytes
 }
 
@@ -382,6 +407,54 @@ fn sample_tls_frame() -> Vec<u8> {
         0x00, 0x00, 0x00, 0x00, 0x00,
     ]);
     bytes.extend_from_slice(&tls_payload);
+    bytes
+}
+
+fn sample_dns_response_frame() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&[0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb]);
+    bytes.extend_from_slice(&[0x00, 0x11, 0x22, 0x33, 0x44, 0x55]);
+    bytes.extend_from_slice(&[0x08, 0x00]);
+    let dns_payload: [u8; 45] = [
+        0x12, 0x34, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x07, b'e', b'x',
+        b'a', b'm', b'p', b'l', b'e', 0x03, b'c', b'o', b'm', 0x00, 0x00, 0x01, 0x00, 0x01, 0xc0,
+        0x0c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3c, 0x00, 0x04, 93, 184, 216, 34,
+    ];
+    let total_length = 20 + 8 + dns_payload.len() as u16;
+    bytes.extend_from_slice(&[
+        0x45,
+        0x00,
+        (total_length >> 8) as u8,
+        total_length as u8,
+        0x12,
+        0x35,
+        0x00,
+        0x00,
+        0x40,
+        0x11,
+        0x00,
+        0x00,
+        8,
+        8,
+        8,
+        8,
+        192,
+        168,
+        1,
+        10,
+    ]);
+    let udp_length = 8 + dns_payload.len() as u16;
+    bytes.extend_from_slice(&[
+        0x00,
+        0x35,
+        0xd4,
+        0x31,
+        (udp_length >> 8) as u8,
+        udp_length as u8,
+        0x00,
+        0x00,
+    ]);
+    bytes.extend_from_slice(&dns_payload);
     bytes
 }
 

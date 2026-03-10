@@ -2,13 +2,15 @@ use std::env;
 use std::path::PathBuf;
 
 use app_services::{
-    CaptureStatsInput, CaptureStatsService, InspectCaptureInput, InspectCaptureService,
-    InspectPacketInput, InspectPacketService, ListPacketsInput, ListPacketsService,
+    CaptureStatsInput, CaptureStatsService, ConversationsInput, ConversationsService,
+    InspectCaptureInput, InspectCaptureService, InspectPacketInput, InspectPacketService,
+    ListPacketsInput, ListPacketsService,
 };
 use output_formatters::{
     render_capture_report, render_capture_report_json, render_capture_stats_report,
-    render_capture_stats_report_json, render_packet_detail_report,
-    render_packet_detail_report_json, render_packet_list_report, render_packet_list_report_json,
+    render_capture_stats_report_json, render_conversation_report, render_conversation_report_json,
+    render_packet_detail_report, render_packet_detail_report_json, render_packet_list_report,
+    render_packet_list_report_json,
 };
 
 fn main() {
@@ -68,6 +70,15 @@ fn run() -> Result<(), String> {
             }
             Ok(())
         }
+        Command::Conversations { path, filter } => {
+            let report =
+                ConversationsService::default().list(ConversationsInput { path, filter })?;
+            match cli.output_mode {
+                OutputMode::Text => println!("{}", render_conversation_report(&report)),
+                OutputMode::Json => println!("{}", render_conversation_report_json(&report)),
+            }
+            Ok(())
+        }
     }
 }
 
@@ -99,6 +110,10 @@ enum Command {
         packet_index: u64,
     },
     Stats {
+        path: PathBuf,
+        filter: Option<String>,
+    },
+    Conversations {
         path: PathBuf,
         filter: Option<String>,
     },
@@ -188,6 +203,13 @@ where
                 filter,
             }
         }
+        Some("conversations") => {
+            let (filter, positional) = parse_filter_args(&remaining)?;
+            Command::Conversations {
+                path: single_path_arg("conversations", &positional)?,
+                filter,
+            }
+        }
         Some(command) => return Err(usage(&format!("unknown command: {command}"))),
     };
 
@@ -239,12 +261,14 @@ Usage:
   icesniff-cli [--json] list <capture-file> [limit] [--filter <expr>]
   icesniff-cli [--json] show-packet <capture-file> <packet-index>
   icesniff-cli [--json] stats <capture-file> [--filter <expr>]
+  icesniff-cli [--json] conversations <capture-file> [--filter <expr>]
 
 Commands:
   inspect      Read a capture file and print a shared-engine summary.
   list         Enumerate packets through shared services with derived columns.
   show-packet  Decode one packet through the shared service layer.
   stats        Summarize packet and protocol counts through shared services.
+  conversations  Summarize bidirectional flows through shared services.
 
 Flags:
   --json       Emit machine-readable JSON instead of text output.
@@ -258,7 +282,7 @@ fn usage(message: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_cli, Command, OutputMode};
+    use super::{parse_cli, Cli, Command, OutputMode};
     use std::path::PathBuf;
 
     #[test]
@@ -296,6 +320,28 @@ mod tests {
                 path: PathBuf::from("sample.pcap"),
                 limit: None,
                 filter: Some("protocol=dns".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_filter_for_conversations_command() {
+        let cli = parse_cli([
+            "conversations".to_string(),
+            "capture.pcap".to_string(),
+            "--filter".to_string(),
+            "host=example.com".to_string(),
+        ])
+        .expect("expected command to parse");
+
+        assert_eq!(
+            cli,
+            Cli {
+                output_mode: OutputMode::Text,
+                command: Command::Conversations {
+                    path: PathBuf::from("capture.pcap"),
+                    filter: Some("host=example.com".to_string()),
+                },
             }
         );
     }

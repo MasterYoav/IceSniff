@@ -161,6 +161,7 @@ The first implemented vertical slices are:
 - `list <capture-file> [limit] [--filter <expr>]` for shared PCAP and PCAPNG packet enumeration
 - `show-packet <capture-file> <packet-index>` for shared PCAP and PCAPNG packet detail inspection
 - `stats <capture-file> [--filter <expr>]` for shared capture and protocol summary statistics
+- `conversations <capture-file> [--filter <expr>]` for shared bidirectional flow summaries
 - `--json` output mode for machine-readable CLI automation
 
 Packet detail now includes:
@@ -196,6 +197,7 @@ Current commands:
 - `list <capture-file> [limit] [--filter <expr>]`
 - `show-packet <capture-file> <packet-index>`
 - `stats <capture-file> [--filter <expr>]`
+- `conversations <capture-file> [--filter <expr>]`
 
 All commands support `--json`.
 

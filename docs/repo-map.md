@@ -28,11 +28,11 @@ The first implemented slice is intentionally narrow:
 2. `apps/cli` accepts `list <capture-file> [limit]`.
 3. `apps/cli` accepts `show-packet <capture-file> <packet-index>`.
 4. `apps/cli` accepts `stats <capture-file>` and supports `--json`.
-5. `apps/cli` accepts shared `--filter <expr>` semantics for `list` and `stats`.
+5. `apps/cli` accepts shared `--filter <expr>` semantics for `list`, `stats`, and `conversations`.
 6. `crates/app-services` exposes the use cases as shared services.
 7. `crates/file-io` loads capture files into shared packet records.
 8. `crates/filter-engine` applies shared packet-filter semantics.
-9. `crates/parser-core` turns loaded packets into list/detail/stats reports.
+9. `crates/parser-core` turns loaded packets into list/detail/stats/conversation reports.
 10. `crates/protocol-dissectors` performs minimal Ethernet/ARP/IPv4/TCP/UDP/ICMP decoding plus early DNS/HTTP/TLS inspection.
 11. `crates/session-model` carries the report structures.
 12. `crates/output-formatters` renders text and JSON CLI output.

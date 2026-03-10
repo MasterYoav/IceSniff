@@ -17,14 +17,16 @@
 - application-layer inspection added for DNS, HTTP/1.1, and TLS handshake metadata
 - shared filtering added for packet listing and capture stats
 - packet-list derived columns added for source, destination, protocol, and info
+- shared bidirectional conversation summaries added through the CLI
 - CLI integration smoke tests added
 
 ## Next implementation steps
 
 1. Replace manual CLI parsing with `clap` when dependency management is in place.
 2. Extend shared filter semantics beyond `protocol`, `port`, and `host` into compound analyst workflows.
-3. Extend PCAPNG support beyond the current section/interface/enhanced-packet flow into broader block coverage and richer timestamp option handling.
-4. Expand the current byte-range-aware field tree and early DNS/HTTP/TLS support into richer protocol-specific inspection and deeper protocol coverage.
-5. Replace inline sample generation with committed fixtures and broader CLI snapshot-style tests.
-6. Add the remaining planned crates: capture, analysis.
-7. Bootstrap `apps/desktop` once shared services can drive a real workflow.
+3. Add stream-level and request/response correlation on top of the current conversation summaries.
+4. Extend PCAPNG support beyond the current section/interface/enhanced-packet flow into broader block coverage and richer timestamp option handling.
+5. Expand the current byte-range-aware field tree and early DNS/HTTP/TLS support into richer protocol-specific inspection and deeper protocol coverage.
+6. Replace inline sample generation with committed fixtures and broader CLI snapshot-style tests.
+7. Add the remaining planned crates: capture, analysis.
+8. Bootstrap `apps/desktop` once shared services can drive a real workflow.

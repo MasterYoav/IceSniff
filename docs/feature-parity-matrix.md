@@ -10,5 +10,6 @@ This matrix tracks whether a capability exists in the shared engine and how each
 | Inspect packet detail | Partial | Partial | Planned | Implemented as `show-packet <capture-file> <packet-index>` for PCAP and common PCAPNG enhanced-packet blocks with minimal Ethernet/ARP/IPv4/TCP/UDP/ICMP decoding, a byte-range-aware field tree, and DNS/HTTP/TLS application metadata |
 | Capture stats | Partial | Partial | Planned | Implemented as `stats <capture-file> [--filter <expr>]` for PCAP and common PCAPNG enhanced-packet blocks with summary counts by link/network/transport |
 | Basic filtering | Yes | Yes | Planned | Shared semantics currently support `protocol=...`, `port=...`, and `host=...` |
+| Conversations | Partial | Partial | Planned | Implemented as `conversations <capture-file> [--filter <expr>]` with bidirectional endpoint normalization and packet/byte totals |
 | Live capture | Planned | Planned | Planned | Requires capture-engine crate |
 | Save/export capture | Planned | Planned | Planned | Shared service required |

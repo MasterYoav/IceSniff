@@ -4,9 +4,10 @@ use std::path::Path;
 use filter_engine::matches_filter;
 use protocol_dissectors::decode_packet;
 use session_model::{
-    ApplicationLayerSummary, CaptureFormat, CaptureStatsReport, CapturedPacket, DecodedPacket,
-    LinkLayerSummary, LoadedCapture, NamedCount, NetworkLayerSummary, PacketDetailReport,
-    PacketListReport, PacketListRow, TransportLayerSummary,
+    ApplicationLayerSummary, CaptureFormat, CaptureStatsReport, CapturedPacket, ConversationReport,
+    ConversationRow, DecodedPacket, LinkLayerSummary, LoadedCapture, NamedCount,
+    NetworkLayerSummary, PacketDetailReport, PacketListReport, PacketListRow,
+    TransportLayerSummary,
 };
 
 pub fn list_packets(
@@ -94,6 +95,51 @@ pub fn capture_stats(
     })
 }
 
+pub fn conversations(
+    capture: &LoadedCapture,
+    filter: Option<&str>,
+) -> Result<ConversationReport, String> {
+    let decoded = filtered_packets(capture, filter)?;
+    let mut rows = BTreeMap::<(String, String, String), ConversationRow>::new();
+
+    for packet in decoded {
+        let protocol = packet_protocol(&packet);
+        let (endpoint_a, endpoint_b) = conversation_endpoints(&packet);
+        let key = (protocol.clone(), endpoint_a.clone(), endpoint_b.clone());
+
+        match rows.get_mut(&key) {
+            Some(row) => {
+                row.packets += 1;
+                row.total_captured_bytes += u64::from(packet.summary.captured_length);
+                row.first_packet_index = row.first_packet_index.min(packet.summary.index);
+                row.last_packet_index = row.last_packet_index.max(packet.summary.index);
+            }
+            None => {
+                rows.insert(
+                    key,
+                    ConversationRow {
+                        protocol,
+                        endpoint_a,
+                        endpoint_b,
+                        packets: 1,
+                        total_captured_bytes: u64::from(packet.summary.captured_length),
+                        first_packet_index: packet.summary.index,
+                        last_packet_index: packet.summary.index,
+                    },
+                );
+            }
+        }
+    }
+
+    let conversations = rows.into_values().collect::<Vec<_>>();
+    Ok(ConversationReport {
+        path: capture.path.clone(),
+        format: capture.format.clone(),
+        total_conversations: conversations.len() as u64,
+        conversations,
+    })
+}
+
 pub fn decode_captured_packet(packet: &CapturedPacket) -> DecodedPacket {
     decode_packet(packet.summary.clone(), &packet.raw_bytes, packet.linktype)
 }
@@ -162,7 +208,21 @@ fn filtered_packets(
 }
 
 fn packet_list_row(packet: DecodedPacket) -> PacketListRow {
-    let (source, destination) = match &packet.network {
+    let (source, destination) = packet_addresses(&packet);
+    let protocol = packet_protocol(&packet);
+    let info = packet_info(&packet);
+
+    PacketListRow {
+        summary: packet.summary,
+        source,
+        destination,
+        protocol,
+        info,
+    }
+}
+
+fn packet_addresses(packet: &DecodedPacket) -> (String, String) {
+    match &packet.network {
         Some(NetworkLayerSummary::Ipv4(ipv4)) => {
             (ipv4.source_ip.clone(), ipv4.destination_ip.clone())
         }
@@ -171,9 +231,11 @@ fn packet_list_row(packet: DecodedPacket) -> PacketListRow {
             arp.target_protocol_address.clone(),
         ),
         None => ("n/a".to_string(), "n/a".to_string()),
-    };
+    }
+}
 
-    let protocol = if let Some(app) = &packet.application {
+fn packet_protocol(packet: &DecodedPacket) -> String {
+    if let Some(app) = &packet.application {
         match app {
             ApplicationLayerSummary::Dns(_) => "dns".to_string(),
             ApplicationLayerSummary::Http(_) => "http".to_string(),
@@ -190,9 +252,11 @@ fn packet_list_row(packet: DecodedPacket) -> PacketListRow {
                 None => "unknown".to_string(),
             },
         }
-    };
+    }
+}
 
-    let info = match &packet.application {
+fn packet_info(packet: &DecodedPacket) -> String {
+    match &packet.application {
         Some(ApplicationLayerSummary::Dns(dns)) => format!(
             "dns {}",
             dns.questions.first().map(String::as_str).unwrap_or("query")
@@ -221,14 +285,27 @@ fn packet_list_row(packet: DecodedPacket) -> PacketListRow {
             }
             None => "n/a".to_string(),
         },
+    }
+}
+
+fn conversation_endpoints(packet: &DecodedPacket) -> (String, String) {
+    let (source, destination) = packet_addresses(packet);
+    let (left, right) = match &packet.transport {
+        Some(TransportLayerSummary::Tcp(tcp)) => (
+            format!("{source}:{}", tcp.source_port),
+            format!("{destination}:{}", tcp.destination_port),
+        ),
+        Some(TransportLayerSummary::Udp(udp)) => (
+            format!("{source}:{}", udp.source_port),
+            format!("{destination}:{}", udp.destination_port),
+        ),
+        _ => (source, destination),
     };
 
-    PacketListRow {
-        summary: packet.summary,
-        source,
-        destination,
-        protocol,
-        info,
+    if left <= right {
+        (left, right)
+    } else {
+        (right, left)
     }
 }
 

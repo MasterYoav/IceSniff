@@ -50,6 +50,25 @@ pub struct PacketListRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationReport {
+    pub path: PathBuf,
+    pub format: CaptureFormat,
+    pub total_conversations: u64,
+    pub conversations: Vec<ConversationRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationRow {
+    pub protocol: String,
+    pub endpoint_a: String,
+    pub endpoint_b: String,
+    pub packets: u64,
+    pub total_captured_bytes: u64,
+    pub first_packet_index: u64,
+    pub last_packet_index: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedCapture {
     pub path: PathBuf,
     pub format: CaptureFormat,
