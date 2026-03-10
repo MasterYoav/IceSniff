@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/icesniff_dark.png" alt="IceSniff app icon" width="140">
+  <img src="media/banner.png" alt="IceSniff app icon" width="140">
 </p>
 
 # IceSniff
