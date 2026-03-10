@@ -212,8 +212,13 @@ fn conversations_command_groups_bidirectional_dns_flow() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).expect("stdout was not utf-8");
     assert!(stdout.contains("\"total_conversations\":1"));
+    assert!(stdout.contains("\"service\":\"dns\""));
     assert!(stdout.contains("\"protocol\":\"dns\""));
     assert!(stdout.contains("\"packets\":2"));
+    assert!(stdout.contains("\"packets_a_to_b\":1"));
+    assert!(stdout.contains("\"packets_b_to_a\":1"));
+    assert!(stdout.contains("\"request_count\":1"));
+    assert!(stdout.contains("\"response_count\":1"));
 }
 
 fn sample_pcap_bytes() -> Vec<u8> {

@@ -18,13 +18,14 @@
 - shared filtering added for packet listing and capture stats
 - packet-list derived columns added for source, destination, protocol, and info
 - shared bidirectional conversation summaries added through the CLI
+- shared conversation summaries extended with service guessing and request/response counts
 - CLI integration smoke tests added
 
 ## Next implementation steps
 
 1. Replace manual CLI parsing with `clap` when dependency management is in place.
 2. Extend shared filter semantics beyond `protocol`, `port`, and `host` into compound analyst workflows.
-3. Add stream-level and request/response correlation on top of the current conversation summaries.
+3. Add reassembled stream tracking and transaction-level correlation on top of the current conversation summaries.
 4. Extend PCAPNG support beyond the current section/interface/enhanced-packet flow into broader block coverage and richer timestamp option handling.
 5. Expand the current byte-range-aware field tree and early DNS/HTTP/TLS support into richer protocol-specific inspection and deeper protocol coverage.
 6. Replace inline sample generation with committed fixtures and broader CLI snapshot-style tests.

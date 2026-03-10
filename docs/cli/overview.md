@@ -28,8 +28,11 @@ The shared filter engine currently supports:
 `conversations` currently groups traffic into bidirectional rows using:
 
 - application or transport protocol
+- service guesses built from application and well-known port metadata
 - normalized endpoint pairs
 - packet counts
+- directional packet counts
+- request and response counts for recognized DNS, HTTP, and TLS handshake traffic
 - captured-byte totals
 - first and last packet indexes
 

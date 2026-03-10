@@ -42,6 +42,8 @@ This file is the running project documentary for future sessions.
 - Added shared filtering for packet listing and capture stats with `protocol`, `port`, and `host` expressions.
 - Added analyst-oriented packet-list columns for source, destination, protocol, and info.
 - Added bidirectional conversation summaries as a shared report and CLI command.
+- Extended conversation summaries with service guessing, directional packet counts, and request/response counts.
+- Added a top-level MIT `LICENSE` file and aligned contributor terms to MIT so the public repository can accept outside help cleanly.
 - Extended the shared packet decoding and stats flow to common PCAPNG packets.
 - Added CLI integration smoke tests that execute the compiled binary against sample PCAP and PCAPNG captures.
 - Added continuity docs:
@@ -60,7 +62,7 @@ This file is the running project documentary for future sessions.
 - PCAPNG support currently covers section header, interface description, and enhanced packet blocks; other block types are still limited.
 - Packet detail decoding now includes a byte-range-aware basic field tree plus early DNS, HTTP/1.1, and TLS handshake support, but protocol coverage is still limited.
 - Capture stats are summary-only.
-- Conversation summaries are intentionally coarse and do not yet track reassembled streams or request/response state.
+- Conversation summaries now track basic request/response state, but they still do not reassemble streams or correlate full transactions.
 - Shared filtering is still intentionally narrow and does not yet include Wireshark-style boolean expressions.
 - No desktop hex-highlighting or byte-range-driven UI exists yet.
 - Packet timestamps are surfaced raw from the file and are not yet normalized into wall-clock formatting helpers.
@@ -68,4 +70,4 @@ This file is the running project documentary for future sessions.
 
 ### Recommended next move
 
-Build stream/request-response analysis on top of the current conversation summaries, then deepen filter semantics and protocol coverage while keeping the CLI as the reference interface.
+Build reassembled stream and transaction analysis on top of the current conversation summaries, then deepen filter semantics and protocol coverage while keeping the CLI as the reference interface.

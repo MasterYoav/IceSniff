@@ -59,10 +59,15 @@ pub struct ConversationReport {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConversationRow {
+    pub service: String,
     pub protocol: String,
     pub endpoint_a: String,
     pub endpoint_b: String,
     pub packets: u64,
+    pub packets_a_to_b: u64,
+    pub packets_b_to_a: u64,
+    pub request_count: u64,
+    pub response_count: u64,
     pub total_captured_bytes: u64,
     pub first_packet_index: u64,
     pub last_packet_index: u64,

@@ -104,12 +104,24 @@ pub fn conversations(
 
     for packet in decoded {
         let protocol = packet_protocol(&packet);
-        let (endpoint_a, endpoint_b) = conversation_endpoints(&packet);
+        let service = packet_service(&packet);
+        let (source_endpoint, destination_endpoint) = packet_directional_endpoints(&packet);
+        let (endpoint_a, endpoint_b) =
+            ordered_endpoints(source_endpoint.clone(), destination_endpoint.clone());
         let key = (protocol.clone(), endpoint_a.clone(), endpoint_b.clone());
+        let source_is_a = source_endpoint == endpoint_a;
+        let (request_count, response_count) = packet_request_response_counts(&packet);
 
         match rows.get_mut(&key) {
             Some(row) => {
                 row.packets += 1;
+                if source_is_a {
+                    row.packets_a_to_b += 1;
+                } else {
+                    row.packets_b_to_a += 1;
+                }
+                row.request_count += request_count;
+                row.response_count += response_count;
                 row.total_captured_bytes += u64::from(packet.summary.captured_length);
                 row.first_packet_index = row.first_packet_index.min(packet.summary.index);
                 row.last_packet_index = row.last_packet_index.max(packet.summary.index);
@@ -118,10 +130,15 @@ pub fn conversations(
                 rows.insert(
                     key,
                     ConversationRow {
+                        service,
                         protocol,
                         endpoint_a,
                         endpoint_b,
                         packets: 1,
+                        packets_a_to_b: if source_is_a { 1 } else { 0 },
+                        packets_b_to_a: if source_is_a { 0 } else { 1 },
+                        request_count,
+                        response_count,
                         total_captured_bytes: u64::from(packet.summary.captured_length),
                         first_packet_index: packet.summary.index,
                         last_packet_index: packet.summary.index,
@@ -288,9 +305,9 @@ fn packet_info(packet: &DecodedPacket) -> String {
     }
 }
 
-fn conversation_endpoints(packet: &DecodedPacket) -> (String, String) {
+fn packet_directional_endpoints(packet: &DecodedPacket) -> (String, String) {
     let (source, destination) = packet_addresses(packet);
-    let (left, right) = match &packet.transport {
+    match &packet.transport {
         Some(TransportLayerSummary::Tcp(tcp)) => (
             format!("{source}:{}", tcp.source_port),
             format!("{destination}:{}", tcp.destination_port),
@@ -300,12 +317,68 @@ fn conversation_endpoints(packet: &DecodedPacket) -> (String, String) {
             format!("{destination}:{}", udp.destination_port),
         ),
         _ => (source, destination),
-    };
+    }
+}
 
+fn ordered_endpoints(left: String, right: String) -> (String, String) {
     if left <= right {
         (left, right)
     } else {
         (right, left)
+    }
+}
+
+fn packet_request_response_counts(packet: &DecodedPacket) -> (u64, u64) {
+    match &packet.application {
+        Some(ApplicationLayerSummary::Dns(dns)) => {
+            if dns.is_response {
+                (0, 1)
+            } else {
+                (1, 0)
+            }
+        }
+        Some(ApplicationLayerSummary::Http(http)) => {
+            if http.kind == "response" {
+                (0, 1)
+            } else {
+                (1, 0)
+            }
+        }
+        Some(ApplicationLayerSummary::TlsHandshake(tls)) => match tls.handshake_type.as_str() {
+            "client_hello" => (1, 0),
+            "server_hello" => (0, 1),
+            _ => (0, 0),
+        },
+        None => (0, 0),
+    }
+}
+
+fn packet_service(packet: &DecodedPacket) -> String {
+    match &packet.application {
+        Some(ApplicationLayerSummary::Dns(_)) => "dns".to_string(),
+        Some(ApplicationLayerSummary::Http(_)) => "http".to_string(),
+        Some(ApplicationLayerSummary::TlsHandshake(_)) => "tls".to_string(),
+        None => match &packet.transport {
+            Some(TransportLayerSummary::Tcp(tcp)) => {
+                guess_service_from_ports("tcp", tcp.source_port, tcp.destination_port)
+            }
+            Some(TransportLayerSummary::Udp(udp)) => {
+                guess_service_from_ports("udp", udp.source_port, udp.destination_port)
+            }
+            Some(TransportLayerSummary::Icmp(_)) => "icmp".to_string(),
+            None => packet_protocol(packet),
+        },
+    }
+}
+
+fn guess_service_from_ports(fallback: &str, source_port: u16, destination_port: u16) -> String {
+    let low_port = source_port.min(destination_port);
+    match low_port {
+        53 => "dns".to_string(),
+        80 => "http".to_string(),
+        443 => "tls".to_string(),
+        5353 => "mdns".to_string(),
+        _ => fallback.to_string(),
     }
 }
 

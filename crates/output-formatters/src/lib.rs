@@ -204,11 +204,16 @@ pub fn render_conversation_report(report: &ConversationReport) -> String {
 
     for row in &report.conversations {
         lines.push(format!(
-            "  - proto={} endpoints={} <-> {} packets={} bytes={} first_packet={} last_packet={}",
+            "  - service={} proto={} endpoints={} <-> {} packets={} a_to_b={} b_to_a={} requests={} responses={} bytes={} first_packet={} last_packet={}",
+            row.service,
             row.protocol,
             row.endpoint_a,
             row.endpoint_b,
             row.packets,
+            row.packets_a_to_b,
+            row.packets_b_to_a,
+            row.request_count,
+            row.response_count,
             row.total_captured_bytes,
             row.first_packet_index,
             row.last_packet_index,
@@ -311,11 +316,16 @@ pub fn render_conversation_report_json(report: &ConversationReport) -> String {
             .iter()
             .map(|row| {
                 format!(
-                    "{{\"protocol\":\"{}\",\"endpoint_a\":\"{}\",\"endpoint_b\":\"{}\",\"packets\":{},\"total_captured_bytes\":{},\"first_packet_index\":{},\"last_packet_index\":{}}}",
+                    "{{\"service\":\"{}\",\"protocol\":\"{}\",\"endpoint_a\":\"{}\",\"endpoint_b\":\"{}\",\"packets\":{},\"packets_a_to_b\":{},\"packets_b_to_a\":{},\"request_count\":{},\"response_count\":{},\"total_captured_bytes\":{},\"first_packet_index\":{},\"last_packet_index\":{}}}",
+                    json_escape(&row.service),
                     json_escape(&row.protocol),
                     json_escape(&row.endpoint_a),
                     json_escape(&row.endpoint_b),
                     row.packets,
+                    row.packets_a_to_b,
+                    row.packets_b_to_a,
+                    row.request_count,
+                    row.response_count,
                     row.total_captured_bytes,
                     row.first_packet_index,
                     row.last_packet_index,

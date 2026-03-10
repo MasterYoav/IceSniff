@@ -2,6 +2,8 @@
 
 IceSniff is a modern, open-source network packet analyzer built for clarity, speed, and cross-platform usability.
 
+License: MIT. See `LICENSE`.
+
 The project is designed to provide a cleaner and more approachable experience than traditional packet analysis tools, without sacrificing technical depth. IceSniff will offer both a desktop application and a command-line interface, with the same core capabilities and the same underlying engine.
 
 ## Vision
@@ -163,6 +165,12 @@ The first implemented vertical slices are:
 - `stats <capture-file> [--filter <expr>]` for shared capture and protocol summary statistics
 - `conversations <capture-file> [--filter <expr>]` for shared bidirectional flow summaries
 - `--json` output mode for machine-readable CLI automation
+
+Conversation analysis now includes:
+
+- bidirectional packet counts
+- request and response counts for recognized application protocols
+- service guessing on top of transport and application metadata
 
 Packet detail now includes:
 
