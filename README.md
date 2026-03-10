@@ -178,7 +178,9 @@ Stream analysis now includes:
 - client/server endpoint orientation
 - matched and unmatched transaction counts
 - directional packet counts per stream
-- explicit notes when analysis is still packet-based rather than reassembled
+- reassembled HTTP transaction counting across fragmented TCP payloads
+- reassembled TLS handshake counting across TCP segments
+- explicit notes when stream reconstruction still detects gaps or partial records
 
 Packet detail now includes:
 
@@ -200,6 +202,8 @@ Current shared filter expressions include:
 - `protocol=dns|http|tls|tcp|udp|icmp|ipv4|arp`
 - `port=<number>`
 - `host=<name-or-address>`
+
+For `protocol=dns`, `protocol=http`, and `protocol=tls`, filtering now falls back to well-known ports when packet-local application metadata is not yet available, which keeps fragmented streams visible to the shared analysis layer.
 
 ## Current CLI
 

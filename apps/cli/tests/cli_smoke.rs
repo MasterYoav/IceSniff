@@ -223,7 +223,12 @@ fn conversations_command_groups_bidirectional_dns_flow() {
 
 #[test]
 fn streams_command_reports_http_transaction_summary() {
-    let capture = wrap_pcap_packets(&[sample_http_frame(), sample_http_response_frame()]);
+    let capture = wrap_pcap_packets(&[
+        sample_http_request_fragment_one(),
+        sample_http_request_fragment_two(),
+        sample_http_response_fragment_one(),
+        sample_http_response_fragment_two(),
+    ]);
     let path = write_temp_capture("pcap", &capture);
     let output = Command::new(env!("CARGO_BIN_EXE_icesniff-cli"))
         .args(["--json", "streams", &path, "--filter", "protocol=http"])
@@ -240,7 +245,7 @@ fn streams_command_reports_http_transaction_summary() {
     assert!(stdout.contains("\"matched_transactions\":1"));
     assert!(stdout.contains("\"unmatched_requests\":0"));
     assert!(stdout.contains("\"unmatched_responses\":0"));
-    assert!(stdout.contains("\"notes\":[\"Transaction counts reflect per-packet HTTP messages without TCP reassembly.\"]"));
+    assert!(stdout.contains("\"notes\":[]"));
 }
 
 fn sample_pcap_bytes() -> Vec<u8> {
@@ -486,77 +491,142 @@ fn sample_dns_response_frame() -> Vec<u8> {
 }
 
 fn sample_http_frame() -> Vec<u8> {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&[0x00, 0x11, 0x22, 0x33, 0x44, 0x55]);
-    bytes.extend_from_slice(&[0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb]);
-    bytes.extend_from_slice(&[0x08, 0x00]);
-    let http_payload = b"GET /hello HTTP/1.1\r\nHost: example.com\r\n\r\n";
-    let tcp_length = 20 + http_payload.len() as u16;
-    let total_length = 20 + tcp_length;
-    bytes.extend_from_slice(&[
-        0x45,
-        0x00,
-        (total_length >> 8) as u8,
-        total_length as u8,
-        0xab,
-        0xce,
-        0x00,
-        0x00,
-        0x40,
-        0x06,
-        0x00,
-        0x00,
-        10,
-        0,
-        0,
+    build_tcp_ipv4_frame(
+        [0x00, 0x11, 0x22, 0x33, 0x44, 0x55],
+        [0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb],
+        [10, 0, 0, 1],
+        [93, 184, 216, 34],
+        50000,
+        80,
         1,
-        93,
-        184,
-        216,
-        34,
-    ]);
-    bytes.extend_from_slice(&[
-        0xc3, 0x50, 0x00, 0x50, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x50, 0x18, 0x04,
-        0x00, 0x00, 0x00, 0x00, 0x00,
-    ]);
-    bytes.extend_from_slice(http_payload);
-    bytes
+        0,
+        0xabce,
+        b"GET /hello HTTP/1.1\r\nHost: example.com\r\n\r\n",
+    )
 }
 
-fn sample_http_response_frame() -> Vec<u8> {
+fn sample_http_request_fragment_one() -> Vec<u8> {
+    build_tcp_ipv4_frame(
+        [0x00, 0x11, 0x22, 0x33, 0x44, 0x55],
+        [0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb],
+        [10, 0, 0, 1],
+        [93, 184, 216, 34],
+        50000,
+        80,
+        1,
+        0,
+        0xabd0,
+        b"GET /hello HTTP/1.1\r\nHo",
+    )
+}
+
+fn sample_http_request_fragment_two() -> Vec<u8> {
+    build_tcp_ipv4_frame(
+        [0x00, 0x11, 0x22, 0x33, 0x44, 0x55],
+        [0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb],
+        [10, 0, 0, 1],
+        [93, 184, 216, 34],
+        50000,
+        80,
+        24,
+        0,
+        0xabd1,
+        b"st: example.com\r\n\r\n",
+    )
+}
+
+fn sample_http_response_fragment_one() -> Vec<u8> {
+    build_tcp_ipv4_frame(
+        [0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb],
+        [0x00, 0x11, 0x22, 0x33, 0x44, 0x55],
+        [93, 184, 216, 34],
+        [10, 0, 0, 1],
+        80,
+        50000,
+        2,
+        45,
+        0xabd2,
+        b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhe",
+    )
+}
+
+fn sample_http_response_fragment_two() -> Vec<u8> {
+    build_tcp_ipv4_frame(
+        [0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb],
+        [0x00, 0x11, 0x22, 0x33, 0x44, 0x55],
+        [93, 184, 216, 34],
+        [10, 0, 0, 1],
+        80,
+        50000,
+        42,
+        45,
+        0xabd3,
+        b"llo",
+    )
+}
+
+fn build_tcp_ipv4_frame(
+    destination_mac: [u8; 6],
+    source_mac: [u8; 6],
+    source_ip: [u8; 4],
+    destination_ip: [u8; 4],
+    source_port: u16,
+    destination_port: u16,
+    sequence_number: u32,
+    acknowledgement_number: u32,
+    identification: u16,
+    payload: &[u8],
+) -> Vec<u8> {
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&[0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb]);
-    bytes.extend_from_slice(&[0x00, 0x11, 0x22, 0x33, 0x44, 0x55]);
+    bytes.extend_from_slice(&destination_mac);
+    bytes.extend_from_slice(&source_mac);
     bytes.extend_from_slice(&[0x08, 0x00]);
-    let http_payload = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
-    let tcp_length = 20 + http_payload.len() as u16;
+    let tcp_length = 20 + payload.len() as u16;
     let total_length = 20 + tcp_length;
     bytes.extend_from_slice(&[
         0x45,
         0x00,
         (total_length >> 8) as u8,
         total_length as u8,
-        0xab,
-        0xcf,
+        (identification >> 8) as u8,
+        identification as u8,
         0x00,
         0x00,
         0x40,
         0x06,
         0x00,
         0x00,
-        93,
-        184,
-        216,
-        34,
-        10,
-        0,
-        0,
-        1,
+        source_ip[0],
+        source_ip[1],
+        source_ip[2],
+        source_ip[3],
+        destination_ip[0],
+        destination_ip[1],
+        destination_ip[2],
+        destination_ip[3],
     ]);
     bytes.extend_from_slice(&[
-        0x00, 0x50, 0xc3, 0x50, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x50, 0x18, 0x04,
-        0x00, 0x00, 0x00, 0x00, 0x00,
+        (source_port >> 8) as u8,
+        source_port as u8,
+        (destination_port >> 8) as u8,
+        destination_port as u8,
+        (sequence_number >> 24) as u8,
+        (sequence_number >> 16) as u8,
+        (sequence_number >> 8) as u8,
+        sequence_number as u8,
+        (acknowledgement_number >> 24) as u8,
+        (acknowledgement_number >> 16) as u8,
+        (acknowledgement_number >> 8) as u8,
+        acknowledgement_number as u8,
+        0x50,
+        0x18,
+        0x04,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
     ]);
-    bytes.extend_from_slice(http_payload);
+    bytes.extend_from_slice(payload);
     bytes
 }

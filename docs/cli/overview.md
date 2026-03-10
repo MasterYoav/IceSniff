@@ -26,6 +26,8 @@ The shared filter engine currently supports:
 - `port=<number>`
 - `host=<name-or-address>`
 
+For `protocol=dns`, `protocol=http`, and `protocol=tls`, the shared filter engine now falls back to well-known ports so fragmented application streams are still included before full packet-local decoding succeeds.
+
 `conversations` currently groups traffic into bidirectional rows using:
 
 - application or transport protocol
@@ -41,9 +43,9 @@ The shared filter engine currently supports:
 
 - client and server endpoint roles
 - directional packet counts
-- request and response counts for DNS, HTTP, and TLS handshake traffic
+- request and response counts for DNS, reassembled HTTP traffic, and reassembled TLS handshake traffic
 - matched and unmatched transaction counters
-- explicit notes where analysis is still packet-based and not full TCP reassembly
+- explicit notes where reassembly detects sequence gaps or incomplete protocol records
 
 `show-packet` currently includes:
 

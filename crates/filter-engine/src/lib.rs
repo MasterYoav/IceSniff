@@ -39,12 +39,21 @@ fn matches_protocol(packet: &DecodedPacket, value: &str) -> bool {
         "tcp" => matches!(packet.transport, Some(TransportLayerSummary::Tcp(_))),
         "udp" => matches!(packet.transport, Some(TransportLayerSummary::Udp(_))),
         "icmp" => matches!(packet.transport, Some(TransportLayerSummary::Icmp(_))),
-        "dns" => matches!(packet.application, Some(ApplicationLayerSummary::Dns(_))),
-        "http" => matches!(packet.application, Some(ApplicationLayerSummary::Http(_))),
-        "tls" => matches!(
-            packet.application,
-            Some(ApplicationLayerSummary::TlsHandshake(_))
-        ),
+        "dns" => {
+            matches!(packet.application, Some(ApplicationLayerSummary::Dns(_)))
+                || matches_port(packet, 53)
+                || matches_port(packet, 5353)
+        }
+        "http" => {
+            matches!(packet.application, Some(ApplicationLayerSummary::Http(_)))
+                || matches_port(packet, 80)
+        }
+        "tls" => {
+            matches!(
+                packet.application,
+                Some(ApplicationLayerSummary::TlsHandshake(_))
+            ) || matches_port(packet, 443)
+        }
         _ => false,
     }
 }

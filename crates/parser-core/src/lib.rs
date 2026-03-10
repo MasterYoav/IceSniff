@@ -162,8 +162,8 @@ pub fn streams(capture: &LoadedCapture, filter: Option<&str>) -> Result<StreamRe
     let mut rows = BTreeMap::<(String, String, String), StreamAccumulator>::new();
 
     for packet in decoded {
-        let protocol = packet_protocol(&packet);
         let service = packet_service(&packet);
+        let protocol = stream_protocol(&packet, &service);
         let (source_endpoint, destination_endpoint) = packet_directional_endpoints(&packet);
         let (client, server) = client_server_endpoints(&packet, &service);
         let key = (protocol.clone(), client.clone(), server.clone());
@@ -183,14 +183,22 @@ pub fn streams(capture: &LoadedCapture, filter: Option<&str>) -> Result<StreamRe
             total_captured_bytes: 0,
             first_packet_index: packet.summary.index,
             last_packet_index: packet.summary.index,
-            notes: stream_notes(&packet),
+            notes: Vec::new(),
+            client_segments: Vec::new(),
+            server_segments: Vec::new(),
         });
 
         row.packets += 1;
         if from_client {
             row.client_to_server_packets += 1;
+            if let Some(segment) = tcp_payload_segment(&packet) {
+                row.client_segments.push(segment);
+            }
         } else {
             row.server_to_client_packets += 1;
+            if let Some(segment) = tcp_payload_segment(&packet) {
+                row.server_segments.push(segment);
+            }
         }
         row.request_count += request_count;
         row.response_count += response_count;
@@ -202,7 +210,8 @@ pub fn streams(capture: &LoadedCapture, filter: Option<&str>) -> Result<StreamRe
     let streams = rows
         .into_values()
         .map(|row| {
-            let matched_transactions = row.request_count.min(row.response_count);
+            let (request_count, response_count, notes) = analyze_stream_transactions(&row);
+            let matched_transactions = request_count.min(response_count);
             StreamRow {
                 service: row.service,
                 protocol: row.protocol,
@@ -211,15 +220,15 @@ pub fn streams(capture: &LoadedCapture, filter: Option<&str>) -> Result<StreamRe
                 packets: row.packets,
                 client_to_server_packets: row.client_to_server_packets,
                 server_to_client_packets: row.server_to_client_packets,
-                request_count: row.request_count,
-                response_count: row.response_count,
+                request_count,
+                response_count,
                 matched_transactions,
-                unmatched_requests: row.request_count.saturating_sub(matched_transactions),
-                unmatched_responses: row.response_count.saturating_sub(matched_transactions),
+                unmatched_requests: request_count.saturating_sub(matched_transactions),
+                unmatched_responses: response_count.saturating_sub(matched_transactions),
                 total_captured_bytes: row.total_captured_bytes,
                 first_packet_index: row.first_packet_index,
                 last_packet_index: row.last_packet_index,
-                notes: row.notes,
+                notes,
             }
         })
         .collect::<Vec<_>>();
@@ -464,6 +473,13 @@ fn packet_service(packet: &DecodedPacket) -> String {
     }
 }
 
+fn stream_protocol(packet: &DecodedPacket, service: &str) -> String {
+    match service {
+        "dns" | "http" | "tls" | "mdns" => service.to_string(),
+        _ => packet_protocol(packet),
+    }
+}
+
 fn role_from_application(
     packet: &DecodedPacket,
     source_endpoint: &str,
@@ -577,21 +593,6 @@ fn guess_service_from_ports(fallback: &str, source_port: u16, destination_port: 
     }
 }
 
-fn stream_notes(packet: &DecodedPacket) -> Vec<String> {
-    match &packet.application {
-        Some(ApplicationLayerSummary::Http(_)) => {
-            vec![
-                "Transaction counts reflect per-packet HTTP messages without TCP reassembly."
-                    .to_string(),
-            ]
-        }
-        Some(ApplicationLayerSummary::TlsHandshake(_)) => {
-            vec!["TLS stream analysis currently tracks handshake messages only.".to_string()]
-        }
-        _ => Vec::new(),
-    }
-}
-
 #[derive(Debug, Clone)]
 struct StreamAccumulator {
     service: String,
@@ -607,6 +608,252 @@ struct StreamAccumulator {
     first_packet_index: u64,
     last_packet_index: u64,
     notes: Vec<String>,
+    client_segments: Vec<PayloadSegment>,
+    server_segments: Vec<PayloadSegment>,
+}
+
+#[derive(Debug, Clone)]
+struct PayloadSegment {
+    sequence_number: u32,
+    bytes: Vec<u8>,
+}
+
+fn analyze_stream_transactions(row: &StreamAccumulator) -> (u64, u64, Vec<String>) {
+    let mut notes = row.notes.clone();
+
+    match row.service.as_str() {
+        "http" => {
+            let client_bytes = reassemble_tcp_segments(&row.client_segments, "client", &mut notes);
+            let server_bytes = reassemble_tcp_segments(&row.server_segments, "server", &mut notes);
+            let requests = count_http_messages(&client_bytes, true, "client", &mut notes);
+            let responses = count_http_messages(&server_bytes, false, "server", &mut notes);
+            (requests, responses, notes)
+        }
+        "tls" => {
+            let client_bytes = reassemble_tcp_segments(&row.client_segments, "client", &mut notes);
+            let server_bytes = reassemble_tcp_segments(&row.server_segments, "server", &mut notes);
+            let requests = count_tls_handshake_messages(&client_bytes, true, "client", &mut notes);
+            let responses =
+                count_tls_handshake_messages(&server_bytes, false, "server", &mut notes);
+            notes.push(
+                "TLS transaction counts reflect reassembled handshake messages only.".to_string(),
+            );
+            (requests, responses, notes)
+        }
+        _ => (row.request_count, row.response_count, notes),
+    }
+}
+
+fn tcp_payload_segment(packet: &DecodedPacket) -> Option<PayloadSegment> {
+    let ipv4 = match &packet.network {
+        Some(NetworkLayerSummary::Ipv4(ipv4)) => ipv4,
+        _ => return None,
+    };
+    let tcp = match &packet.transport {
+        Some(TransportLayerSummary::Tcp(tcp)) => tcp,
+        _ => return None,
+    };
+    let link_header_len = match packet.link {
+        LinkLayerSummary::Ethernet(_) => 14usize,
+        LinkLayerSummary::Unknown => return None,
+    };
+    let ip_header_len = usize::from(ipv4.header_length);
+    let tcp_start = link_header_len.checked_add(ip_header_len)?;
+    if packet.raw_bytes.len() < tcp_start + 20 {
+        return None;
+    }
+    let tcp_header_len = usize::from(packet.raw_bytes[tcp_start + 12] >> 4) * 4;
+    if tcp_header_len < 20 || packet.raw_bytes.len() < tcp_start + tcp_header_len {
+        return None;
+    }
+    let payload_start = tcp_start + tcp_header_len;
+    Some(PayloadSegment {
+        sequence_number: tcp.sequence_number,
+        bytes: packet.raw_bytes[payload_start..].to_vec(),
+    })
+}
+
+fn reassemble_tcp_segments(
+    segments: &[PayloadSegment],
+    direction: &str,
+    notes: &mut Vec<String>,
+) -> Vec<u8> {
+    let mut segments = segments.to_vec();
+    segments.sort_by_key(|segment| segment.sequence_number);
+
+    let mut bytes = Vec::new();
+    let mut next_sequence = None::<u64>;
+    let mut noted_gap = false;
+
+    for segment in segments {
+        if segment.bytes.is_empty() {
+            continue;
+        }
+
+        let sequence = u64::from(segment.sequence_number);
+        let segment_end = sequence + segment.bytes.len() as u64;
+
+        match next_sequence {
+            None => {
+                bytes.extend_from_slice(&segment.bytes);
+                next_sequence = Some(segment_end);
+            }
+            Some(expected) if sequence > expected => {
+                if !noted_gap {
+                    notes.push(format!(
+                        "{direction} tcp stream has sequence gaps; reassembly may be incomplete."
+                    ));
+                    noted_gap = true;
+                }
+                bytes.extend_from_slice(&segment.bytes);
+                next_sequence = Some(segment_end);
+            }
+            Some(expected) if sequence < expected => {
+                let overlap = (expected - sequence) as usize;
+                if overlap < segment.bytes.len() {
+                    bytes.extend_from_slice(&segment.bytes[overlap..]);
+                    next_sequence = Some(segment_end.max(expected));
+                }
+            }
+            Some(_) => {
+                bytes.extend_from_slice(&segment.bytes);
+                next_sequence = Some(segment_end);
+            }
+        }
+    }
+
+    bytes
+}
+
+fn count_http_messages(
+    bytes: &[u8],
+    expect_request: bool,
+    direction: &str,
+    notes: &mut Vec<String>,
+) -> u64 {
+    let mut count = 0u64;
+    let mut offset = 0usize;
+
+    while offset < bytes.len() {
+        let header_end = match find_subslice(&bytes[offset..], b"\r\n\r\n") {
+            Some(end) => end,
+            None => {
+                notes.push(format!(
+                    "{direction} http stream ended with an incomplete header after reassembly."
+                ));
+                break;
+            }
+        };
+        let header_slice = &bytes[offset..offset + header_end];
+        let header_text = String::from_utf8_lossy(header_slice);
+        let first_line = header_text.lines().next().unwrap_or_default();
+
+        if expect_request && !looks_like_http_request(first_line) {
+            notes.push(format!(
+                "{direction} http stream did not start with a recognizable request line."
+            ));
+            break;
+        }
+        if !expect_request && !looks_like_http_response(first_line) {
+            notes.push(format!(
+                "{direction} http stream did not start with a recognizable response line."
+            ));
+            break;
+        }
+
+        let content_length = parse_http_content_length(&header_text).unwrap_or(0usize);
+        let message_len = header_end + 4 + content_length;
+        if offset + message_len > bytes.len() {
+            notes.push(format!(
+                "{direction} http stream ended with an incomplete body after reassembly."
+            ));
+            break;
+        }
+
+        count += 1;
+        offset += message_len;
+    }
+
+    count
+}
+
+fn count_tls_handshake_messages(
+    bytes: &[u8],
+    expect_client: bool,
+    direction: &str,
+    notes: &mut Vec<String>,
+) -> u64 {
+    let mut count = 0u64;
+    let mut offset = 0usize;
+
+    while offset + 5 <= bytes.len() {
+        let content_type = bytes[offset];
+        let record_len = u16::from_be_bytes([bytes[offset + 3], bytes[offset + 4]]) as usize;
+        if offset + 5 + record_len > bytes.len() {
+            notes.push(format!(
+                "{direction} tls stream ended with an incomplete record after reassembly."
+            ));
+            break;
+        }
+
+        if content_type == 22 {
+            let mut handshake_offset = offset + 5;
+            let handshake_end = offset + 5 + record_len;
+            while handshake_offset + 4 <= handshake_end {
+                let handshake_type = bytes[handshake_offset];
+                let handshake_len = ((usize::from(bytes[handshake_offset + 1])) << 16)
+                    | ((usize::from(bytes[handshake_offset + 2])) << 8)
+                    | usize::from(bytes[handshake_offset + 3]);
+                if handshake_offset + 4 + handshake_len > handshake_end {
+                    notes.push(format!(
+                        "{direction} tls stream ended with an incomplete handshake message after reassembly."
+                    ));
+                    break;
+                }
+                if expect_client && handshake_type == 1 {
+                    count += 1;
+                }
+                if !expect_client && handshake_type == 2 {
+                    count += 1;
+                }
+                handshake_offset += 4 + handshake_len;
+            }
+        }
+
+        offset += 5 + record_len;
+    }
+
+    count
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+fn looks_like_http_request(first_line: &str) -> bool {
+    [
+        "GET ", "POST ", "PUT ", "DELETE ", "HEAD ", "OPTIONS ", "PATCH ",
+    ]
+    .iter()
+    .any(|prefix| first_line.starts_with(prefix))
+}
+
+fn looks_like_http_response(first_line: &str) -> bool {
+    first_line.starts_with("HTTP/1.")
+}
+
+fn parse_http_content_length(header_text: &str) -> Option<usize> {
+    for line in header_text.lines() {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if name.trim().eq_ignore_ascii_case("content-length") {
+            return value.trim().parse::<usize>().ok();
+        }
+    }
+    None
 }
 
 fn increment_count(counts: &mut BTreeMap<String, u64>, key: String) {

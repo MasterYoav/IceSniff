@@ -45,6 +45,8 @@ This file is the running project documentary for future sessions.
 - Extended conversation summaries with service guessing, directional packet counts, and request/response counts.
 - Added a top-level MIT `LICENSE` file and aligned contributor terms to MIT so the public repository can accept outside help cleanly.
 - Added a dedicated shared stream report and CLI command with client/server role selection and basic matched transaction counters.
+- Extended the shared stream report with TCP reassembly for fragmented HTTP transactions and TLS handshake records.
+- Updated shared protocol filtering so DNS/HTTP/TLS filters fall back to well-known ports when packet-local application metadata is absent.
 - Extended the shared packet decoding and stats flow to common PCAPNG packets.
 - Added CLI integration smoke tests that execute the compiled binary against sample PCAP and PCAPNG captures.
 - Added continuity docs:
@@ -63,7 +65,7 @@ This file is the running project documentary for future sessions.
 - PCAPNG support currently covers section header, interface description, and enhanced packet blocks; other block types are still limited.
 - Packet detail decoding now includes a byte-range-aware basic field tree plus early DNS, HTTP/1.1, and TLS handshake support, but protocol coverage is still limited.
 - Capture stats are summary-only.
-- Conversation summaries now track basic request/response state, and stream summaries add client/server roles plus transaction counts, but HTTP and TLS are still packet-based rather than true reassembled streams.
+- Conversation summaries now track basic request/response state, and stream summaries now perform real TCP payload reassembly for HTTP transactions and TLS handshake records, but broader TCP state handling and deeper multi-message correlation are still limited.
 - Shared filtering is still intentionally narrow and does not yet include Wireshark-style boolean expressions.
 - No desktop hex-highlighting or byte-range-driven UI exists yet.
 - Packet timestamps are surfaced raw from the file and are not yet normalized into wall-clock formatting helpers.
@@ -71,4 +73,4 @@ This file is the running project documentary for future sessions.
 
 ### Recommended next move
 
-Replace the current packet-based stream heuristics with true reassembled TCP stream and transaction analysis, then deepen filter semantics and protocol coverage while keeping the CLI as the reference interface.
+Extend the current reassembled stream layer into broader TCP state handling and deeper transaction correlation, then deepen filter semantics and protocol coverage while keeping the CLI as the reference interface.
