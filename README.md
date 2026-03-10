@@ -164,6 +164,7 @@ The first implemented vertical slices are:
 - `show-packet <capture-file> <packet-index>` for shared PCAP and PCAPNG packet detail inspection
 - `stats <capture-file> [--filter <expr>]` for shared capture and protocol summary statistics
 - `conversations <capture-file> [--filter <expr>]` for shared bidirectional flow summaries
+- `streams <capture-file> [--filter <expr>]` for shared client/server stream and transaction summaries
 - `--json` output mode for machine-readable CLI automation
 
 Conversation analysis now includes:
@@ -171,6 +172,13 @@ Conversation analysis now includes:
 - bidirectional packet counts
 - request and response counts for recognized application protocols
 - service guessing on top of transport and application metadata
+
+Stream analysis now includes:
+
+- client/server endpoint orientation
+- matched and unmatched transaction counts
+- directional packet counts per stream
+- explicit notes when analysis is still packet-based rather than reassembled
 
 Packet detail now includes:
 
@@ -206,6 +214,7 @@ Current commands:
 - `show-packet <capture-file> <packet-index>`
 - `stats <capture-file> [--filter <expr>]`
 - `conversations <capture-file> [--filter <expr>]`
+- `streams <capture-file> [--filter <expr>]`
 
 All commands support `--json`.
 

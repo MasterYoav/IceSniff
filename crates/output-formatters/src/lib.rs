@@ -1,7 +1,7 @@
 use session_model::{
     ApplicationLayerSummary, CaptureFormat, CaptureReport, CaptureStatsReport, ConversationReport,
     FieldNode, LinkLayerSummary, NamedCount, NetworkLayerSummary, PacketDetailReport,
-    PacketListReport, TimestampPrecision, TransportLayerSummary,
+    PacketListReport, StreamReport, TimestampPrecision, TransportLayerSummary,
 };
 
 pub fn render_capture_report(report: &CaptureReport) -> String {
@@ -223,6 +223,56 @@ pub fn render_conversation_report(report: &ConversationReport) -> String {
     lines.join("\n")
 }
 
+pub fn render_stream_report(report: &StreamReport) -> String {
+    let format = match report.format {
+        CaptureFormat::Pcap => "pcap",
+        CaptureFormat::PcapNg => "pcapng",
+        CaptureFormat::Unknown => "unknown",
+    };
+
+    let mut lines = vec![
+        "Streams".to_string(),
+        format!("  path: {}", report.path.display()),
+        format!("  format: {format}"),
+        format!("  total_streams: {}", report.total_streams),
+        "items:".to_string(),
+    ];
+
+    if report.streams.is_empty() {
+        lines.push("  - none".to_string());
+        return lines.join("\n");
+    }
+
+    for row in &report.streams {
+        let notes = if row.notes.is_empty() {
+            String::new()
+        } else {
+            format!(" notes={}", row.notes.join(" | "))
+        };
+        lines.push(format!(
+            "  - service={} proto={} client={} server={} packets={} c_to_s={} s_to_c={} requests={} responses={} matched={} unmatched_requests={} unmatched_responses={} bytes={} first_packet={} last_packet={}{}",
+            row.service,
+            row.protocol,
+            row.client,
+            row.server,
+            row.packets,
+            row.client_to_server_packets,
+            row.server_to_client_packets,
+            row.request_count,
+            row.response_count,
+            row.matched_transactions,
+            row.unmatched_requests,
+            row.unmatched_responses,
+            row.total_captured_bytes,
+            row.first_packet_index,
+            row.last_packet_index,
+            notes,
+        ));
+    }
+
+    lines.join("\n")
+}
+
 pub fn render_capture_report_json(report: &CaptureReport) -> String {
     format!(
         "{{\"path\":\"{}\",\"format\":\"{}\",\"size_bytes\":{},\"packet_count_hint\":{},\"notes\":[{}]}}",
@@ -329,6 +379,45 @@ pub fn render_conversation_report_json(report: &ConversationReport) -> String {
                     row.total_captured_bytes,
                     row.first_packet_index,
                     row.last_packet_index,
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+    )
+}
+
+pub fn render_stream_report_json(report: &StreamReport) -> String {
+    format!(
+        "{{\"path\":\"{}\",\"format\":\"{}\",\"total_streams\":{},\"streams\":[{}]}}",
+        json_escape(&report.path.display().to_string()),
+        capture_format_name(&report.format),
+        report.total_streams,
+        report
+            .streams
+            .iter()
+            .map(|row| {
+                format!(
+                    "{{\"service\":\"{}\",\"protocol\":\"{}\",\"client\":\"{}\",\"server\":\"{}\",\"packets\":{},\"client_to_server_packets\":{},\"server_to_client_packets\":{},\"request_count\":{},\"response_count\":{},\"matched_transactions\":{},\"unmatched_requests\":{},\"unmatched_responses\":{},\"total_captured_bytes\":{},\"first_packet_index\":{},\"last_packet_index\":{},\"notes\":[{}]}}",
+                    json_escape(&row.service),
+                    json_escape(&row.protocol),
+                    json_escape(&row.client),
+                    json_escape(&row.server),
+                    row.packets,
+                    row.client_to_server_packets,
+                    row.server_to_client_packets,
+                    row.request_count,
+                    row.response_count,
+                    row.matched_transactions,
+                    row.unmatched_requests,
+                    row.unmatched_responses,
+                    row.total_captured_bytes,
+                    row.first_packet_index,
+                    row.last_packet_index,
+                    row.notes
+                        .iter()
+                        .map(|note| format!("\"{}\"", json_escape(note)))
+                        .collect::<Vec<_>>()
+                        .join(","),
                 )
             })
             .collect::<Vec<_>>()

@@ -74,6 +74,34 @@ pub struct ConversationRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamReport {
+    pub path: PathBuf,
+    pub format: CaptureFormat,
+    pub total_streams: u64,
+    pub streams: Vec<StreamRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamRow {
+    pub service: String,
+    pub protocol: String,
+    pub client: String,
+    pub server: String,
+    pub packets: u64,
+    pub client_to_server_packets: u64,
+    pub server_to_client_packets: u64,
+    pub request_count: u64,
+    pub response_count: u64,
+    pub matched_transactions: u64,
+    pub unmatched_requests: u64,
+    pub unmatched_responses: u64,
+    pub total_captured_bytes: u64,
+    pub first_packet_index: u64,
+    pub last_packet_index: u64,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedCapture {
     pub path: PathBuf,
     pub format: CaptureFormat,

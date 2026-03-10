@@ -221,6 +221,28 @@ fn conversations_command_groups_bidirectional_dns_flow() {
     assert!(stdout.contains("\"response_count\":1"));
 }
 
+#[test]
+fn streams_command_reports_http_transaction_summary() {
+    let capture = wrap_pcap_packets(&[sample_http_frame(), sample_http_response_frame()]);
+    let path = write_temp_capture("pcap", &capture);
+    let output = Command::new(env!("CARGO_BIN_EXE_icesniff-cli"))
+        .args(["--json", "streams", &path, "--filter", "protocol=http"])
+        .output()
+        .expect("failed to run streams command");
+    fs::remove_file(&path).expect("failed to remove http stream sample");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout was not utf-8");
+    assert!(stdout.contains("\"total_streams\":1"));
+    assert!(stdout.contains("\"service\":\"http\""));
+    assert!(stdout.contains("\"request_count\":1"));
+    assert!(stdout.contains("\"response_count\":1"));
+    assert!(stdout.contains("\"matched_transactions\":1"));
+    assert!(stdout.contains("\"unmatched_requests\":0"));
+    assert!(stdout.contains("\"unmatched_responses\":0"));
+    assert!(stdout.contains("\"notes\":[\"Transaction counts reflect per-packet HTTP messages without TCP reassembly.\"]"));
+}
+
 fn sample_pcap_bytes() -> Vec<u8> {
     let mut bytes = Vec::new();
 
@@ -495,6 +517,44 @@ fn sample_http_frame() -> Vec<u8> {
     ]);
     bytes.extend_from_slice(&[
         0xc3, 0x50, 0x00, 0x50, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x50, 0x18, 0x04,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+    ]);
+    bytes.extend_from_slice(http_payload);
+    bytes
+}
+
+fn sample_http_response_frame() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&[0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb]);
+    bytes.extend_from_slice(&[0x00, 0x11, 0x22, 0x33, 0x44, 0x55]);
+    bytes.extend_from_slice(&[0x08, 0x00]);
+    let http_payload = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+    let tcp_length = 20 + http_payload.len() as u16;
+    let total_length = 20 + tcp_length;
+    bytes.extend_from_slice(&[
+        0x45,
+        0x00,
+        (total_length >> 8) as u8,
+        total_length as u8,
+        0xab,
+        0xcf,
+        0x00,
+        0x00,
+        0x40,
+        0x06,
+        0x00,
+        0x00,
+        93,
+        184,
+        216,
+        34,
+        10,
+        0,
+        0,
+        1,
+    ]);
+    bytes.extend_from_slice(&[
+        0x00, 0x50, 0xc3, 0x50, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x50, 0x18, 0x04,
         0x00, 0x00, 0x00, 0x00, 0x00,
     ]);
     bytes.extend_from_slice(http_payload);

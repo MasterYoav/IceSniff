@@ -11,5 +11,6 @@ This matrix tracks whether a capability exists in the shared engine and how each
 | Capture stats | Partial | Partial | Planned | Implemented as `stats <capture-file> [--filter <expr>]` for PCAP and common PCAPNG enhanced-packet blocks with summary counts by link/network/transport |
 | Basic filtering | Yes | Yes | Planned | Shared semantics currently support `protocol=...`, `port=...`, and `host=...` |
 | Conversations | Partial | Partial | Planned | Implemented as `conversations <capture-file> [--filter <expr>]` with bidirectional endpoint normalization, service guessing, directional packet counts, and request/response totals for recognized protocols |
+| Streams and transactions | Partial | Partial | Planned | Implemented as `streams <capture-file> [--filter <expr>]` with client/server roles, directional counts, and basic matched transaction counters; HTTP remains packet-based without TCP reassembly |
 | Live capture | Planned | Planned | Planned | Requires capture-engine crate |
 | Save/export capture | Planned | Planned | Planned | Shared service required |

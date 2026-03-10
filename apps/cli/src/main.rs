@@ -4,13 +4,13 @@ use std::path::PathBuf;
 use app_services::{
     CaptureStatsInput, CaptureStatsService, ConversationsInput, ConversationsService,
     InspectCaptureInput, InspectCaptureService, InspectPacketInput, InspectPacketService,
-    ListPacketsInput, ListPacketsService,
+    ListPacketsInput, ListPacketsService, StreamsInput, StreamsService,
 };
 use output_formatters::{
     render_capture_report, render_capture_report_json, render_capture_stats_report,
     render_capture_stats_report_json, render_conversation_report, render_conversation_report_json,
     render_packet_detail_report, render_packet_detail_report_json, render_packet_list_report,
-    render_packet_list_report_json,
+    render_packet_list_report_json, render_stream_report, render_stream_report_json,
 };
 
 fn main() {
@@ -79,6 +79,14 @@ fn run() -> Result<(), String> {
             }
             Ok(())
         }
+        Command::Streams { path, filter } => {
+            let report = StreamsService::default().list(StreamsInput { path, filter })?;
+            match cli.output_mode {
+                OutputMode::Text => println!("{}", render_stream_report(&report)),
+                OutputMode::Json => println!("{}", render_stream_report_json(&report)),
+            }
+            Ok(())
+        }
     }
 }
 
@@ -114,6 +122,10 @@ enum Command {
         filter: Option<String>,
     },
     Conversations {
+        path: PathBuf,
+        filter: Option<String>,
+    },
+    Streams {
         path: PathBuf,
         filter: Option<String>,
     },
@@ -210,6 +222,13 @@ where
                 filter,
             }
         }
+        Some("streams") => {
+            let (filter, positional) = parse_filter_args(&remaining)?;
+            Command::Streams {
+                path: single_path_arg("streams", &positional)?,
+                filter,
+            }
+        }
         Some(command) => return Err(usage(&format!("unknown command: {command}"))),
     };
 
@@ -262,6 +281,7 @@ Usage:
   icesniff-cli [--json] show-packet <capture-file> <packet-index>
   icesniff-cli [--json] stats <capture-file> [--filter <expr>]
   icesniff-cli [--json] conversations <capture-file> [--filter <expr>]
+  icesniff-cli [--json] streams <capture-file> [--filter <expr>]
 
 Commands:
   inspect      Read a capture file and print a shared-engine summary.
@@ -269,6 +289,7 @@ Commands:
   show-packet  Decode one packet through the shared service layer.
   stats        Summarize packet and protocol counts through shared services.
   conversations  Summarize bidirectional flows through shared services.
+  streams      Summarize client/server streams and basic transactions.
 
 Flags:
   --json       Emit machine-readable JSON instead of text output.
@@ -341,6 +362,28 @@ mod tests {
                 command: Command::Conversations {
                     path: PathBuf::from("capture.pcap"),
                     filter: Some("host=example.com".to_string()),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn parses_filter_for_streams_command() {
+        let cli = parse_cli([
+            "streams".to_string(),
+            "capture.pcap".to_string(),
+            "--filter".to_string(),
+            "protocol=http".to_string(),
+        ])
+        .expect("expected command to parse");
+
+        assert_eq!(
+            cli,
+            Cli {
+                output_mode: OutputMode::Text,
+                command: Command::Streams {
+                    path: PathBuf::from("capture.pcap"),
+                    filter: Some("protocol=http".to_string()),
                 },
             }
         );

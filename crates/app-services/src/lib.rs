@@ -1,9 +1,12 @@
 use std::path::PathBuf;
 
 use file_io::{capture_file_size, read_capture};
-use parser_core::{capture_stats, conversations, inspect_metadata, inspect_packet, list_packets};
+use parser_core::{
+    capture_stats, conversations, inspect_metadata, inspect_packet, list_packets, streams,
+};
 use session_model::{
     CaptureReport, CaptureStatsReport, ConversationReport, PacketDetailReport, PacketListReport,
+    StreamReport,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,5 +92,21 @@ impl ConversationsService {
     pub fn list(&self, input: ConversationsInput) -> Result<ConversationReport, String> {
         let capture = read_capture(&input.path)?;
         conversations(&capture, input.filter.as_deref())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamsInput {
+    pub path: PathBuf,
+    pub filter: Option<String>,
+}
+
+#[derive(Debug, Default)]
+pub struct StreamsService;
+
+impl StreamsService {
+    pub fn list(&self, input: StreamsInput) -> Result<StreamReport, String> {
+        let capture = read_capture(&input.path)?;
+        streams(&capture, input.filter.as_deref())
     }
 }

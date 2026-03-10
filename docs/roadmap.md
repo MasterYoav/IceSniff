@@ -19,13 +19,14 @@
 - packet-list derived columns added for source, destination, protocol, and info
 - shared bidirectional conversation summaries added through the CLI
 - shared conversation summaries extended with service guessing and request/response counts
+- shared stream summaries added with client/server roles and basic transaction matching
 - CLI integration smoke tests added
 
 ## Next implementation steps
 
 1. Replace manual CLI parsing with `clap` when dependency management is in place.
 2. Extend shared filter semantics beyond `protocol`, `port`, and `host` into compound analyst workflows.
-3. Add reassembled stream tracking and transaction-level correlation on top of the current conversation summaries.
+3. Replace the current packet-based HTTP and TLS stream heuristics with true reassembled stream and transaction analysis.
 4. Extend PCAPNG support beyond the current section/interface/enhanced-packet flow into broader block coverage and richer timestamp option handling.
 5. Expand the current byte-range-aware field tree and early DNS/HTTP/TLS support into richer protocol-specific inspection and deeper protocol coverage.
 6. Replace inline sample generation with committed fixtures and broader CLI snapshot-style tests.

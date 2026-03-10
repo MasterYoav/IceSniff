@@ -6,8 +6,8 @@ use protocol_dissectors::decode_packet;
 use session_model::{
     ApplicationLayerSummary, CaptureFormat, CaptureStatsReport, CapturedPacket, ConversationReport,
     ConversationRow, DecodedPacket, LinkLayerSummary, LoadedCapture, NamedCount,
-    NetworkLayerSummary, PacketDetailReport, PacketListReport, PacketListRow,
-    TransportLayerSummary,
+    NetworkLayerSummary, PacketDetailReport, PacketListReport, PacketListRow, StreamReport,
+    StreamRow, TransportLayerSummary,
 };
 
 pub fn list_packets(
@@ -154,6 +154,81 @@ pub fn conversations(
         format: capture.format.clone(),
         total_conversations: conversations.len() as u64,
         conversations,
+    })
+}
+
+pub fn streams(capture: &LoadedCapture, filter: Option<&str>) -> Result<StreamReport, String> {
+    let decoded = filtered_packets(capture, filter)?;
+    let mut rows = BTreeMap::<(String, String, String), StreamAccumulator>::new();
+
+    for packet in decoded {
+        let protocol = packet_protocol(&packet);
+        let service = packet_service(&packet);
+        let (source_endpoint, destination_endpoint) = packet_directional_endpoints(&packet);
+        let (client, server) = client_server_endpoints(&packet, &service);
+        let key = (protocol.clone(), client.clone(), server.clone());
+        let from_client = source_endpoint == client && destination_endpoint == server;
+        let (request_count, response_count) = packet_request_response_counts(&packet);
+
+        let row = rows.entry(key).or_insert_with(|| StreamAccumulator {
+            service,
+            protocol,
+            client,
+            server,
+            packets: 0,
+            client_to_server_packets: 0,
+            server_to_client_packets: 0,
+            request_count: 0,
+            response_count: 0,
+            total_captured_bytes: 0,
+            first_packet_index: packet.summary.index,
+            last_packet_index: packet.summary.index,
+            notes: stream_notes(&packet),
+        });
+
+        row.packets += 1;
+        if from_client {
+            row.client_to_server_packets += 1;
+        } else {
+            row.server_to_client_packets += 1;
+        }
+        row.request_count += request_count;
+        row.response_count += response_count;
+        row.total_captured_bytes += u64::from(packet.summary.captured_length);
+        row.first_packet_index = row.first_packet_index.min(packet.summary.index);
+        row.last_packet_index = row.last_packet_index.max(packet.summary.index);
+    }
+
+    let streams = rows
+        .into_values()
+        .map(|row| {
+            let matched_transactions = row.request_count.min(row.response_count);
+            StreamRow {
+                service: row.service,
+                protocol: row.protocol,
+                client: row.client,
+                server: row.server,
+                packets: row.packets,
+                client_to_server_packets: row.client_to_server_packets,
+                server_to_client_packets: row.server_to_client_packets,
+                request_count: row.request_count,
+                response_count: row.response_count,
+                matched_transactions,
+                unmatched_requests: row.request_count.saturating_sub(matched_transactions),
+                unmatched_responses: row.response_count.saturating_sub(matched_transactions),
+                total_captured_bytes: row.total_captured_bytes,
+                first_packet_index: row.first_packet_index,
+                last_packet_index: row.last_packet_index,
+                notes: row.notes,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    Ok(StreamReport {
+        path: capture.path.clone(),
+        format: capture.format.clone(),
+        total_streams: streams.len() as u64,
+        streams,
     })
 }
 
@@ -328,6 +403,24 @@ fn ordered_endpoints(left: String, right: String) -> (String, String) {
     }
 }
 
+fn client_server_endpoints(packet: &DecodedPacket, service: &str) -> (String, String) {
+    let (source_endpoint, destination_endpoint) = packet_directional_endpoints(packet);
+
+    if let Some((client, server)) =
+        role_from_application(packet, &source_endpoint, &destination_endpoint)
+    {
+        return (client, server);
+    }
+
+    if let Some((client, server)) =
+        role_from_transport(packet, &source_endpoint, &destination_endpoint, service)
+    {
+        return (client, server);
+    }
+
+    (source_endpoint, destination_endpoint)
+}
+
 fn packet_request_response_counts(packet: &DecodedPacket) -> (u64, u64) {
     match &packet.application {
         Some(ApplicationLayerSummary::Dns(dns)) => {
@@ -371,6 +464,108 @@ fn packet_service(packet: &DecodedPacket) -> String {
     }
 }
 
+fn role_from_application(
+    packet: &DecodedPacket,
+    source_endpoint: &str,
+    destination_endpoint: &str,
+) -> Option<(String, String)> {
+    match &packet.application {
+        Some(ApplicationLayerSummary::Dns(dns)) => {
+            if dns.is_response {
+                Some((
+                    destination_endpoint.to_string(),
+                    source_endpoint.to_string(),
+                ))
+            } else {
+                Some((
+                    source_endpoint.to_string(),
+                    destination_endpoint.to_string(),
+                ))
+            }
+        }
+        Some(ApplicationLayerSummary::Http(http)) => {
+            if http.kind == "response" {
+                Some((
+                    destination_endpoint.to_string(),
+                    source_endpoint.to_string(),
+                ))
+            } else {
+                Some((
+                    source_endpoint.to_string(),
+                    destination_endpoint.to_string(),
+                ))
+            }
+        }
+        Some(ApplicationLayerSummary::TlsHandshake(tls)) => match tls.handshake_type.as_str() {
+            "client_hello" => Some((
+                source_endpoint.to_string(),
+                destination_endpoint.to_string(),
+            )),
+            "server_hello" => Some((
+                destination_endpoint.to_string(),
+                source_endpoint.to_string(),
+            )),
+            _ => None,
+        },
+        None => None,
+    }
+}
+
+fn role_from_transport(
+    packet: &DecodedPacket,
+    source_endpoint: &str,
+    destination_endpoint: &str,
+    service: &str,
+) -> Option<(String, String)> {
+    match &packet.transport {
+        Some(TransportLayerSummary::Tcp(tcp)) => {
+            if is_server_port(service, tcp.source_port)
+                && !is_server_port(service, tcp.destination_port)
+            {
+                Some((
+                    destination_endpoint.to_string(),
+                    source_endpoint.to_string(),
+                ))
+            } else if is_server_port(service, tcp.destination_port) {
+                Some((
+                    source_endpoint.to_string(),
+                    destination_endpoint.to_string(),
+                ))
+            } else {
+                None
+            }
+        }
+        Some(TransportLayerSummary::Udp(udp)) => {
+            if is_server_port(service, udp.source_port)
+                && !is_server_port(service, udp.destination_port)
+            {
+                Some((
+                    destination_endpoint.to_string(),
+                    source_endpoint.to_string(),
+                ))
+            } else if is_server_port(service, udp.destination_port) {
+                Some((
+                    source_endpoint.to_string(),
+                    destination_endpoint.to_string(),
+                ))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn is_server_port(service: &str, port: u16) -> bool {
+    match service {
+        "dns" => port == 53,
+        "mdns" => port == 5353,
+        "http" => port == 80,
+        "tls" => port == 443,
+        _ => port < 1024,
+    }
+}
+
 fn guess_service_from_ports(fallback: &str, source_port: u16, destination_port: u16) -> String {
     let low_port = source_port.min(destination_port);
     match low_port {
@@ -380,6 +575,38 @@ fn guess_service_from_ports(fallback: &str, source_port: u16, destination_port: 
         5353 => "mdns".to_string(),
         _ => fallback.to_string(),
     }
+}
+
+fn stream_notes(packet: &DecodedPacket) -> Vec<String> {
+    match &packet.application {
+        Some(ApplicationLayerSummary::Http(_)) => {
+            vec![
+                "Transaction counts reflect per-packet HTTP messages without TCP reassembly."
+                    .to_string(),
+            ]
+        }
+        Some(ApplicationLayerSummary::TlsHandshake(_)) => {
+            vec!["TLS stream analysis currently tracks handshake messages only.".to_string()]
+        }
+        _ => Vec::new(),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct StreamAccumulator {
+    service: String,
+    protocol: String,
+    client: String,
+    server: String,
+    packets: u64,
+    client_to_server_packets: u64,
+    server_to_client_packets: u64,
+    request_count: u64,
+    response_count: u64,
+    total_captured_bytes: u64,
+    first_packet_index: u64,
+    last_packet_index: u64,
+    notes: Vec<String>,
 }
 
 fn increment_count(counts: &mut BTreeMap<String, u64>, key: String) {
