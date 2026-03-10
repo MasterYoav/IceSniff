@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="media/icesniff.png" alt="IceSniff app icon" width="140">
+</p>
+
 # IceSniff
 
 IceSniff is a modern, open-source network packet analyzer built for clarity, speed, and cross-platform usability.
