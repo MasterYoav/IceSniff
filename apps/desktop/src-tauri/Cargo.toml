@@ -1,0 +1,20 @@
+[package]
+name = "icesniff-desktop"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+app-services = { path = "../../../crates/app-services" }
+output-formatters = { path = "../../../crates/output-formatters" }
+session-model = { path = "../../../crates/session-model" }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

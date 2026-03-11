@@ -1,0 +1,41 @@
+:root {
+  color-scheme: light;
+  --ink: #0f1724;
+  --ink-soft: #2b3850;
+  --faint: #6f7f92;
+  --surface-0: #f4f8fc;
+  --surface-1: #ffffff;
+  --surface-2: #ecf2fb;
+  --accent: #1a7bff;
+  --accent-soft: #ddedff;
+  --warm: #e76827;
+  --line: #ced9e8;
+  --ok: #0f8a64;
+  --warn: #9a3d19;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  min-height: 100%;
+  font-family: "Avenir Next", "Trebuchet MS", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 85% 0%, rgba(26, 123, 255, 0.16), transparent 34%),
+    radial-gradient(circle at 0% 95%, rgba(231, 104, 39, 0.12), transparent 40%),
+    linear-gradient(180deg, #f6fbff 0%, #eef4fb 55%, #e9f0fa 100%);
+}
+
+body {
+  padding: 18px;
+}
+
+button,
+input {
+  font: inherit;
+}

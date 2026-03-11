@@ -97,6 +97,15 @@
 - Moved capture session orchestration behind `crates/app-services` so CLI capture commands no longer call `capture-engine` directly.
 - Current backend still relies on external capture tooling and remains partial while deeper provider coverage and richer permission UX are implemented.
 - Started item #5 with shared save/export plumbing: `save` now writes packet-filtered or stream-filter-selected output to PCAP through shared services and shared stream semantics.
+- Extended item #5 into the desktop prototype by exposing filtered PCAP save through Tauri commands/UI controls.
+- Extended item #5 again with desktop analysis-row export actions for conversations/streams/transactions in JSON and CSV formats.
+- Started item #4 with a speed-first `apps/desktop` Tauri 2 + Svelte prototype wired to shared `inspect`, `stats`, `list`, and `show-packet` services, including packet-table selection, field-tree display, and byte-range-aware hex highlighting.
+- Extended item #4 with desktop stream and transaction analysis panels driven by shared `streams` and `transactions` services plus analysis-filter inputs.
+- Extended item #4 again with desktop stream/transaction drill-down details, native file-picker actions, and local recent-capture/last-state persistence.
+- Extended item #4 further with desktop conversations panel parity, including selected-row drill-down details.
+- Extended item #4 with focus-navigation controls from selected analysis rows back into capture-level filtered views.
+- Extended item #4 with cross-panel preselection (conversation -> stream/transaction) and structured desktop JSON command responses.
+- Extended item #1 into the desktop prototype with shared-service live-capture controls (interfaces/start/status/stop), live packet/stats polling, and stop-to-auto-load capture handoff.
 - Started item #8 schema stabilization by adding top-level JSON schema version tags across CLI report output.
 - Started item #8 scripting ergonomics by adding stable CLI error-code prefixes and consistent exit-status categories.
 

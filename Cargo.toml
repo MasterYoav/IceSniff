@@ -10,6 +10,7 @@ members = [
     "crates/protocol-dissectors",
     "crates/session-model",
 ]
+exclude = ["apps/desktop/src-tauri"]
 resolver = "2"
 
 [workspace.package]

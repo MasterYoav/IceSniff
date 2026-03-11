@@ -2,6 +2,82 @@
 
 This file is the running project documentary for future sessions.
 
+## 2026-03-11
+
+### Starting point
+
+- Shared Rust engine/services were already in place via CLI-first work.
+- `apps/desktop` was still a placeholder with no runnable Tauri/Svelte app.
+
+### Decisions preserved
+
+- Prioritized speed-first desktop delivery over architecture hardening.
+- Kept desktop business logic thin by calling shared `app-services` directly.
+- Reused existing JSON rendering from `output-formatters` to avoid DTO rewrite overhead.
+
+### Work completed
+
+- Bootstrapped `apps/desktop` as a Tauri 2 + Svelte prototype app.
+- Added `src-tauri` backend command bridge for:
+  - `inspect_capture`
+  - `list_packets`
+  - `inspect_packet`
+  - `capture_stats`
+  - `list_conversations`
+  - `list_streams`
+  - `list_transactions`
+  - `save_capture`
+  - `capture_runtime_info`
+  - `capture_interfaces`
+  - `capture_start`
+  - `capture_status`
+  - `capture_stop`
+  - `export_conversations`
+  - `export_streams`
+  - `export_transactions`
+  - `sample_capture_paths`
+- Wired backend commands to shared Rust services (`app-services`) and shared JSON output (`output-formatters`).
+- Built a desktop UI vertical slice with:
+  - capture path + filter + row-limit controls
+  - native source/output file pickers via Tauri dialog plugin
+  - recent capture list and last-used analysis state persistence in local desktop storage
+  - stream-filter and transaction-filter controls with analysis refresh
+  - packet table with selection
+  - packet detail summary
+  - decoded layer previews
+  - decoded field tree
+  - byte-range-aware hex pane highlighting
+  - conversation rows with selected-row drill-down details
+  - stream rows and transaction rows
+  - stream/transaction selected-row drill-down details
+  - focus actions from selected conversation/stream/transaction rows into active capture filters
+  - cross-panel preselection so selected conversation/stream/transaction rows can auto-select matching rows in adjacent analysis panels
+  - filtered PCAP save/export action
+  - live-capture controls for interface selection, start/status/stop, and backend/tool runtime visibility
+  - live packet/stats polling from the active temporary capture file while live capture is running
+  - optional follow-latest packet mode so detail/hex panes can track newest packets during live capture
+  - stop-live-capture handoff that auto-loads the generated capture into packet/analysis views
+  - analysis-row export actions for conversations/streams/transactions as JSON or CSV
+- Shifted desktop command responses from raw JSON strings to structured JSON values at the Tauri boundary.
+- Verified desktop bootstrap build path with `npm run tauri -- build --debug`.
+- Updated `docs/desktop/overview.md` to reflect the new prototype status.
+- Replaced desktop placeholder README with runnable prototype instructions.
+
+### Current limitations
+
+- Desktop is currently a rapid prototype and not stability-tuned.
+- Desktop still relies on shared output-formatter JSON schemas rather than dedicated typed desktop DTOs.
+- Desktop app is not included in the Rust workspace members yet, so root `cargo test` does not validate `src-tauri`.
+- Recent/session persistence is local-state only and not yet a formal cross-device session model.
+
+### Recommended next move
+
+Keep momentum on desktop workflow depth:
+
+- add explicit typed desktop DTO contracts instead of formatter-schema coupling
+- add persistent cross-panel selection linking (conversation -> stream -> transaction preselection, not only filter focus)
+- unify desktop analysis export schema/contracts with future CLI export surfaces
+
 ## 2026-03-10
 
 ### Starting point

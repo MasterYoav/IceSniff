@@ -5,7 +5,7 @@ This document explains the current repository layout and the intended responsibi
 ## Top Level
 
 - `apps/cli`: first-class command-line interface on top of shared Rust services
-- `apps/desktop`: placeholder for the future Tauri 2 + Svelte shell
+- `apps/desktop`: speed-first Tauri 2 + Svelte desktop prototype with `src-tauri` backend commands and a packet-table/detail UI slice
 - `crates/app-services`: shared use-case layer consumed by CLI and later the desktop app, including shared live-capture orchestration
 - `crates/capture-engine`: shared live-capture interface/session orchestration and provider-facing process control
 - `crates/filter-engine`: shared packet-filter semantics used by parser and future interfaces
@@ -38,6 +38,7 @@ The first implemented slice is intentionally narrow:
 11. `crates/protocol-dissectors` performs minimal Ethernet/ARP/IPv4/TCP/UDP/ICMP decoding plus early DNS/HTTP/TLS inspection.
 12. `crates/session-model` carries the report structures.
 13. `crates/output-formatters` renders text and JSON CLI output.
+14. `apps/desktop` consumes shared `inspect`, `stats`, `list`, `show-packet`, `conversations`, `streams`, `transactions`, `save`, and live-capture orchestration services through Tauri commands and renders packet/detail/field/hex panes plus conversation/stream/transaction analysis tables, drill-down details, filtered capture export controls, desktop analysis-row JSON/CSV exports, focus-navigation actions back into capture-level filters, and live-capture start/status/stop controls with live packet/stats polling and stop-to-auto-load handoff.
 
 This keeps business logic out of the CLI binary and establishes the layering needed for future desktop reuse.
 
