@@ -1,0 +1,14 @@
+[package]
+name = "icesniff-capture-helper"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+capture-engine = { path = "../../crates/capture-engine" }
+ctrlc = "3.4"
+
+[lints]
+workspace = true

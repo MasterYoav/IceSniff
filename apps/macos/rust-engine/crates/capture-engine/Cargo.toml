@@ -1,0 +1,13 @@
+[package]
+name = "capture-engine"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+pcap = "1.3"

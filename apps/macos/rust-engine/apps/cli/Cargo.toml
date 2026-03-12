@@ -1,0 +1,15 @@
+[package]
+name = "icesniff-cli"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+app-services = { path = "../../crates/app-services" }
+output-formatters = { path = "../../crates/output-formatters" }
+session-model = { path = "../../crates/session-model" }
+
+[lints]
+workspace = true

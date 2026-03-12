@@ -1,75 +1,47 @@
 # Architecture Overview
 
-IceSniff is structured around one shared Rust engine with two thin interfaces:
+IceSniff is moving toward an app-per-platform architecture.
 
-- CLI
-- Desktop
+The repository is no longer optimized around one root-level shared engine feeding every interface. Instead, each shipping app is expected to own the code and packaging it needs in order to build and ship independently.
 
-## Layers
+## Product Surfaces
 
-### Interface layer
-
-This layer is responsible for argument parsing, UI state, and presentation only.
+The intended long-term product surfaces are:
 
 - `apps/cli`
-- `apps/desktop`
+- `apps/macos`
+- `apps/windows`
 
-### Service layer
+Each of those app folders should become independently understandable and independently releasable.
 
-This layer exposes application use cases in a client-agnostic form.
+## Repository Rules
 
-- `crates/app-services`
+1. Prefer app-local code over root-level shared implementation when independence matters.
+2. Keep the repository root thin: `apps/`, `docs/`, and top-level project metadata.
+3. Treat packaging, runtime resources, and tests as app-local by default.
+4. Duplication across apps is acceptable when it reduces coupling or simplifies platform-specific evolution.
 
-Examples:
+## App Shape
 
-- inspect capture file
-- open capture
-- start capture
-- stop capture
-- export packets
+Each app may own its own:
 
-### Domain/model layer
+- source code
+- backend or engine code
+- runtime assets
+- packaging scripts
+- tests
+- release automation
 
-This layer holds stable data structures that can be shared by both interfaces.
+This means the native macOS app can keep a local Rust engine workspace under `apps/macos/rust-engine`, while future Windows work can do the same under its own app folder if needed.
 
-- `crates/session-model`
+## Documentation Role
 
-### Infrastructure layer
+The shared concern that remains at the repository level is documentation and project metadata:
 
-This layer contains file access and capture-container loading.
+- architecture direction
+- contributor guidance
+- roadmap
+- repository map
+- major decisions
 
-- `crates/file-io`
-- `crates/capture-engine`
-
-### Parser/dissector layer
-
-This layer turns loaded packet bytes into decoded packet views and shared analysis reports.
-
-- `crates/parser-core`
-- `crates/protocol-dissectors`
-
-The parser layer depends on shared models and loaded packet records, not on CLI formatting.
-
-### Presentation formatting layer
-
-This layer contains CLI-specific formatting, not business logic.
-
-- `crates/output-formatters`
-
-## Rules
-
-1. Shared capability first.
-2. No duplicate business logic between CLI and desktop.
-3. Keep crates narrow and explicit.
-4. Prefer stable shared models over ad hoc interface-specific payloads.
-
-## Current State
-
-The current implementation proves the initial dependency direction:
-
-- CLI -> app-services -> file-io/session-model
-- CLI -> app-services -> parser-core -> protocol-dissectors/session-model
-- CLI -> app-services -> capture-engine
-- CLI -> output-formatters -> session-model
-
-That is the baseline shape the rest of the project should preserve.
+Those documents should explain how the apps relate to one another, but the code ownership should stay local to each app whenever possible.

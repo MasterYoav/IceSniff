@@ -3,3 +3,6 @@ target/
 node_modules/
 /dist/
 .vite/
+apps/macos/.swiftpm/
+apps/macos/.build/
+apps/macos/build/

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/banner.png" alt="IceSniff app banner" width="1000">
+  <img src="docs/media/banner.png" alt="IceSniff app banner" width="1000">
 </p>
 
 # IceSniff
@@ -8,10 +8,9 @@ IceSniff is a modern, open-source network packet analyzer built for clarity, spe
 License: MIT. See `LICENSE`.
 
 [![Rust](https://img.shields.io/badge/Rust-%23000000.svg?e&logo=rust&logoColor=white)](#)
-[![Svelte](https://img.shields.io/badge/Svelte-%23f1413d.svg?logo=svelte&logoColor=white)](#)
-[![Tauri](https://img.shields.io/badge/Tauri-24C8D8?logo=tauri&logoColor=fff)](#)
+[![SwiftUI](https://img.shields.io/badge/SwiftUI-macOS-blue)](#)
 
-The project is designed to provide a cleaner and more approachable experience than traditional packet analysis tools, without sacrificing technical depth. IceSniff will offer both a desktop application and a command-line interface, with the same core capabilities and the same underlying engine.
+The project is designed to provide a cleaner and more approachable experience than traditional packet analysis tools, without sacrificing technical depth. IceSniff will offer native platform apps and a command-line interface, with feature parity treated as a product requirement.
 
 ## Vision
 
@@ -19,22 +18,23 @@ IceSniff exists to make packet analysis easier to use, easier to explain, and ea
 
 Many existing tools are extremely powerful, but they can feel visually outdated, difficult to approach, or fragmented across different interfaces. IceSniff is intended to close that gap by combining:
 
-- a modern desktop experience
+- native platform experiences
 - a powerful CLI
-- a shared Rust core
+- platform-owned backends where needed
 - strong documentation
 - a fully open-source development model
 
 ## Core Principles
 
-### One engine, two interfaces
-IceSniff is built around a single shared core written in Rust.
+### Feature parity across app tracks
+IceSniff is built as a family of app tracks, not as one desktop shell with incidental ports.
 
-That shared core powers:
-- the desktop application
-- the CLI
+That means:
+- the CLI is a first-class product surface
+- the macOS app is a first-class product surface
+- future Windows work should be treated the same way
 
-This means feature parity is a fundamental project requirement. The CLI is not an afterthought, and the desktop app is not a separate implementation. Both are different interfaces to the same engine.
+Feature parity remains a product requirement, but repository independence between apps is now preferred over one root-level implementation.
 
 ### Documentation-first development
 IceSniff is intended to be easy to understand for users, contributors, and maintainers.
@@ -52,21 +52,15 @@ To support that, the repository will prioritize:
 - explicit architecture documents
 - examples and task-oriented guides
 
-## Technology Stack
+## Technology Direction
 
-IceSniff is planned with the following stack:
+IceSniff now follows an app-per-platform model:
 
-- **Rust** for the shared core, parsing, capture, filtering, and CLI
-- **Tauri 2** for the desktop shell
-- **Svelte** for the desktop UI
+- **Rust** for the CLI and backend/engine components
+- **SwiftUI** for the native macOS app
+- future native platform-specific stacks for other desktop distributions as needed
 
-### Why this stack
-
-**Rust** provides performance, memory safety, and strong cross-platform support. It is a natural fit for packet capture, parsing, protocol decoding, and a portable CLI.
-
-**Tauri 2** provides a lightweight and modern desktop shell that integrates well with Rust and supports desktop builds on macOS, Windows, and Linux.
-
-**Svelte** provides a clean and maintainable way to build the desktop interface without unnecessary frontend complexity.
+The repository is optimized for independent app ownership instead of one shared desktop shell.
 
 ## Cross-Platform Goals
 
@@ -76,9 +70,7 @@ IceSniff is intended to support:
 - **Windows**
 - **Linux**
 
-This applies to both the desktop app and the CLI.
-
-The desktop application should be buildable and usable across all major platforms supported by Tauri.
+This applies to both native app tracks and the CLI.
 
 The CLI should work naturally across:
 - Linux shells
@@ -93,6 +85,7 @@ Platform-specific capture requirements may differ depending on the operating sys
 IceSniff is planned as:
 
 - a desktop packet analysis application
+- native platform-specific packet analysis applications
 - a CLI packet analysis tool
 - a local-first tool
 - a fully open-source project
@@ -126,13 +119,15 @@ The first milestones are expected to focus on a strong core foundation, includin
 
 ## Architecture Direction
 
-The project will follow a layered design:
+The project is now moving toward an app-per-platform repository shape:
 
-- shared Rust crates for capture, parsing, filtering, analysis, and services
-- a thin desktop shell on top of the shared services
-- a thin CLI shell on top of the same shared services
+- `apps/cli`
+- `apps/macos`
+- `apps/windows`
 
-This structure is meant to keep behavior consistent, reduce duplication, improve testing, and make the codebase easier to maintain.
+Each app is expected to become independently buildable and independently shippable, with app-local code, packaging, tests, and runtime dependencies where needed.
+
+Cross-project documentation remains shared at the repository level, but duplication across apps is acceptable when it improves independence and platform-specific clarity.
 
 ## Open Source Direction
 
@@ -159,9 +154,9 @@ IceSniff has entered the initial implementation phase.
 
 The repository now includes:
 
-- a Rust workspace
-- a CLI application scaffold
-- shared crates for service, file IO, formatting, and session models
+- an app-owned CLI Rust workspace under `apps/cli`
+- a native SwiftUI macOS app track under `apps/macos`
+- a placeholder app track for future Windows work under `apps/windows`
 - continuity documentation for future sessions
 
 The first implemented vertical slices are:

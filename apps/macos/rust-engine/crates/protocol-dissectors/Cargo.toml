@@ -1,0 +1,14 @@
+[package]
+name = "protocol-dissectors"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+session-model = { path = "../session-model" }
+
+[lints]
+workspace = true
+

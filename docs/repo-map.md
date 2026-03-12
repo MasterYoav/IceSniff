@@ -4,22 +4,46 @@ This document explains the current repository layout and the intended responsibi
 
 ## Top Level
 
-- `apps/cli`: first-class command-line interface on top of shared Rust services
-- `apps/desktop`: speed-first Tauri 2 + Svelte desktop prototype with `src-tauri` backend commands and a packet-table/detail UI slice
-- `crates/app-services`: shared use-case layer consumed by CLI and later the desktop app, including shared live-capture orchestration
-- `crates/capture-engine`: shared live-capture interface/session orchestration and provider-facing process control
-- `crates/filter-engine`: shared packet-filter semantics used by parser and future interfaces
-- `crates/file-io`: capture container loading for PCAP and PCAPNG into shared raw packet models
-- `crates/output-formatters`: CLI-facing renderers for shared model data
-- `crates/parser-core`: shared report assembly, packet inspection orchestration, and capture stats
-- `crates/protocol-dissectors`: protocol and link-layer decoding logic
-- `crates/session-model`: stable domain model shared across interfaces
+The repository is moving toward a thin-root shape.
+
+- `apps/cli`: first-class command-line interface with its own Rust workspace, fixtures, and tests
+- `apps/macos`: native SwiftUI macOS app track with its own local Rust workspace under `apps/macos/rust-engine`, release scripts, tests, and runtime resources
+- `apps/windows`: intended future native Windows app track
 - `docs/`: architecture, process, roadmap, and continuity documentation
-- `examples/`: future runnable examples
-- `fixtures/`: committed golden capture fixtures used by shared parser and file-io tests (PCAP, PCAPNG, malformed)
-- `scripts/`: future helper scripts for contributors and automation
-- `assets/`: reserved for project assets beyond branding media
-- `media/`: existing project branding files
+- `docs/media/`: branding files used by shared documentation and the root README
+
+## Direction
+
+The documented target is to keep the root focused on:
+
+- `apps/`
+- `docs/`
+- top-level project metadata
+
+Root-level implementation folders should be removed or moved under the owning app as the migration continues.
+
+## Native macOS App Track
+
+`apps/macos` is intentionally self-contained so the native macOS distribution can evolve and ship without depending on other app tracks at runtime.
+
+Inside that app track:
+
+- `apps/macos/Sources/IceSniffMac`: SwiftUI app source
+- `apps/macos/Sources/IceSniffMac/Resources`: shipping icons and bundled runtime binaries only
+- `apps/macos/rust-engine`: mac-local Rust engine workspace used by the native app
+- `apps/macos/scripts`: app-specific build and packaging helpers
+- `apps/macos/Tests`: native app regression coverage
+
+Generated SwiftPM state under `apps/macos/.swiftpm` is not part of the repository layout.
+
+## CLI App Track
+
+`apps/cli` is now its own Rust workspace and owns:
+
+- the CLI entry point
+- CLI-owned Rust crates under `apps/cli/crates`
+- CLI fixtures under `apps/cli/fixtures`
+- CLI tests
 
 ## Current Vertical Slice
 
@@ -31,21 +55,15 @@ The first implemented slice is intentionally narrow:
 4. `apps/cli` accepts `show-packet <capture-file> <packet-index>`.
 5. `apps/cli` accepts `stats <capture-file>` and supports `--json`.
 6. `apps/cli` accepts shared `--filter <expr>` semantics for `list`, `stats`, `conversations`, and `streams`, and `--stream-filter <expr>` semantics for `streams` and `save`.
-7. `crates/app-services` exposes the use cases as shared services.
-8. `crates/file-io` loads capture files into shared packet records and writes PCAP output for save/export workflows.
-9. `crates/filter-engine` applies shared packet-filter semantics.
-10. `crates/parser-core` turns loaded packets into list/detail/stats/conversation/stream reports and stream packet-index selection.
-11. `crates/protocol-dissectors` performs minimal Ethernet/ARP/IPv4/TCP/UDP/ICMP decoding plus early DNS/HTTP/TLS inspection.
-12. `crates/session-model` carries the report structures.
-13. `crates/output-formatters` renders text and JSON CLI output.
-14. `apps/desktop` consumes shared `inspect`, `stats`, `list`, `show-packet`, `conversations`, `streams`, `transactions`, `save`, and live-capture orchestration services through Tauri commands and renders packet/detail/field/hex panes plus conversation/stream/transaction analysis tables, drill-down details, filtered capture export controls, desktop analysis-row JSON/CSV exports, focus-navigation actions back into capture-level filters, and live-capture start/status/stop controls with live packet/stats polling and stop-to-auto-load handoff.
+7. `apps/cli/crates/app-services` exposes the use cases as shared services for the CLI app track.
+8. `apps/cli/crates/file-io` loads capture files into shared packet records and writes PCAP output for save/export workflows.
+9. `apps/cli/crates/filter-engine` applies shared packet-filter semantics.
+10. `apps/cli/crates/parser-core` turns loaded packets into list/detail/stats/conversation/stream reports and stream packet-index selection.
+11. `apps/cli/crates/protocol-dissectors` performs minimal Ethernet/ARP/IPv4/TCP/UDP/ICMP decoding plus early DNS/HTTP/TLS inspection.
+12. `apps/cli/crates/session-model` carries the report structures.
+13. `apps/cli/crates/output-formatters` renders text and JSON CLI output.
+14. `apps/macos` consumes its app-local Rust engine through CLI/helper boundaries and renders packet/detail/field/hex panes plus conversation/stream/transaction analysis tables, filtered export controls, and native live-capture controls.
 
-This keeps business logic out of the CLI binary and establishes the layering needed for future desktop reuse.
+This reflects the current transition state. The intended long-term shape is app-local ownership, not continued growth of root-level shared code by default.
 
-## Planned Expansion
-
-The following crate from the architecture plan still needs to be added:
-
-- `analysis-core`
-
-`capture-engine`, `parser-core`, `protocol-dissectors`, and `filter-engine` now exist. The remaining crate is intentionally deferred until the next implementation step so the current slice stays testable.
+The remaining migration work is mainly repository cleanup and future Windows implementation, not preserving the old root-level workspace shape.
