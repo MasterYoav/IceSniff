@@ -71,10 +71,8 @@ IceSniff is intended to support:
 This applies to both native app tracks and the CLI.
 
 The CLI should work naturally across:
-- Linux shells
-- macOS shells
-- Windows PowerShell
-- Windows Command Prompt
+- macOS / Linux shells
+- Windows PowerShell / CMD
 
 Platform-specific capture requirements may differ depending on the operating system, but cross-platform support is a core project goal from the start.
 
