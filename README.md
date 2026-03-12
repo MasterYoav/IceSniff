@@ -10,8 +10,6 @@ License: MIT. See `LICENSE`.
 [![Rust](https://img.shields.io/badge/Rust-%23000000.svg?e&logo=rust&logoColor=white)](#)
 [![SwiftUI](https://img.shields.io/badge/SwiftUI-macOS-blue)](#)
 
-The project is designed to provide a cleaner and more approachable experience than traditional packet analysis tools, without sacrificing technical depth. IceSniff will offer native platform apps and a command-line interface, with feature parity treated as a product requirement.
-
 ## Vision
 
 IceSniff exists to make packet analysis easier to use, easier to explain, and easier to extend.
@@ -402,3 +400,4 @@ Key docs:
 - `docs/feature-parity-matrix.md`
 - `docs/task-recipes.md`
 - `docs/continuity-log.md`
+  
