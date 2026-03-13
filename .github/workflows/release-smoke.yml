@@ -1,0 +1,32 @@
+name: macOS Release Smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  macos-release-smoke:
+    name: macOS Release Smoke
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/macos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Build unsigned release package
+        run: ./scripts/release-macos.sh
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: IceSniffMac-release
+          path: |
+            apps/macos/build/release/IceSniffMac.zip
+            /tmp/icesniff-macos-derived-data/Build/Products/Release/IceSniffMac.app
+          if-no-files-found: error

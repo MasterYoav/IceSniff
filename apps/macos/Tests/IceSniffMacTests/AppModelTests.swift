@@ -4,6 +4,125 @@ import Testing
 
 struct AppModelTests {
     @Test
+    func preferencesStoreRoundTripsVersionedPreferencesBlob() throws {
+        let suiteName = "IceSniffMacTests.preferences.roundtrip.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let store = PreferencesStore(defaults: defaults)
+        let saved = UserPreferences(
+            theme: .forest,
+            fontChoice: .monospaced,
+            fontSizeStep: .large,
+            updatedAt: Date(timeIntervalSince1970: 1_234)
+        )
+
+        store.save(saved)
+        let loaded = store.load()
+
+        #expect(loaded == saved)
+    }
+
+    @Test
+    func preferencesStoreFallsBackToLegacyKeys() throws {
+        let suiteName = "IceSniffMacTests.preferences.legacy.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+
+        defaults.set(AppTheme.ember.rawValue, forKey: "icesniff.app_theme")
+        defaults.set(AppFontChoice.serif.rawValue, forKey: "icesniff.font_choice")
+        defaults.set(AppFontSizeStep.extraLarge.rawValue, forKey: "icesniff.font_size_step")
+
+        let store = PreferencesStore(defaults: defaults)
+        let loaded = store.load()
+
+        #expect(loaded.theme == .ember)
+        #expect(loaded.fontChoice == .serif)
+        #expect(loaded.fontSizeStep == .extraLarge)
+        #expect(loaded.schemaVersion == UserPreferences.currentSchemaVersion)
+    }
+
+    @Test
+    @MainActor
+    func appModelLoadsInitialPreferencesFromStore() throws {
+        let suiteName = "IceSniffMacTests.preferences.appmodel.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let store = PreferencesStore(defaults: defaults)
+        store.save(
+            UserPreferences(
+                theme: .ocean,
+                fontChoice: .system,
+                fontSizeStep: .small
+            )
+        )
+
+        let model = AppModel(preferencesStore: store)
+
+        #expect(model.appTheme == .ocean)
+        #expect(model.fontChoice == .system)
+        #expect(model.fontSizeStep == .small)
+    }
+
+    @Test
+    func mockAuthServiceReturnsExpectedGoogleSession() async throws {
+        let service = MockAuthService()
+        let session = try await service.signIn(with: .google)
+
+        #expect(session.provider == .google)
+        #expect(session.email == "google-user@example.com")
+    }
+
+    @Test
+    @MainActor
+    func appModelSignInUpdatesSessionAndStatus() async throws {
+        let suiteName = "IceSniffMacTests.profile.signin.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let model = AppModel(
+            preferencesStore: PreferencesStore(defaults: defaults),
+            authService: MockAuthService(),
+            profileSyncService: MockProfileSyncService()
+        )
+
+        model.signIn(with: .github)
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(model.authSession?.provider == .github)
+        #expect(model.profileStatusMessage.contains("GitHub User"))
+        #expect(model.syncStatus != .idle)
+    }
+
+    @Test
+    @MainActor
+    func appModelSignOutClearsSession() async throws {
+        let suiteName = "IceSniffMacTests.profile.signout.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let model = AppModel(
+            preferencesStore: PreferencesStore(defaults: defaults),
+            authService: MockAuthService(currentSession: AuthSession(
+                userID: "seed-user",
+                email: "seed@example.com",
+                displayName: "Seed",
+                avatarURL: nil,
+                provider: .google
+            )),
+            profileSyncService: MockProfileSyncService()
+        )
+
+        #expect(model.authSession != nil)
+        model.signOutProfile()
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(model.authSession == nil)
+        #expect(model.profileStatusMessage.contains("Signed out"))
+    }
+
+    @Test
     func filterNormalizationSupportsComfortSyntax() {
         #expect(FilterExpressionNormalizer.normalize("HTTP") == "protocol=http")
         #expect(FilterExpressionNormalizer.normalize("udp and 443") == "protocol=udp && port=443")
@@ -64,6 +183,23 @@ struct AppModelTests {
         #expect(parsed.capture.requiresAdminForLiveCapture)
         #expect(parsed.filters.alternateAndOperators == ["&&", "&", "and"])
         #expect(parsed.supportedProtocols.contains("http"))
+    }
+
+    @Test
+    func supabaseConfigurationLoadsFromEnvironment() throws {
+        let configuration = try #require(
+            SupabaseConfiguration(
+                environment: [
+                    "ICESNIFF_SUPABASE_URL": "https://project.supabase.co",
+                    "ICESNIFF_SUPABASE_PUBLISHABLE_KEY": "publishable-key",
+                    "ICESNIFF_SUPABASE_PROFILES_TABLE": "profiles"
+                ]
+            )
+        )
+
+        #expect(configuration.url.absoluteString == "https://project.supabase.co")
+        #expect(configuration.publishableKey == "publishable-key")
+        #expect(configuration.profilesTable == "profiles")
     }
 
     @Test

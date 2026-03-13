@@ -9,6 +9,10 @@ For the full app-specific documentation set, start here:
 - `docs/file-map.md`
 - `docs/runtime-and-backend.md`
 - `docs/features.md`
+- `docs/profile-cloud-sync-plan.md`
+- `docs/appwrite-integration-outline.md`
+- `docs/supabase-auth-setup.md`
+- `.env.supabase.example`
 
 Repository hygiene for this app track:
 
@@ -107,6 +111,40 @@ Current coverage includes:
 3. Save filtered vs whole capture scope selection logic.
 4. Engine info / capability payload compatibility.
 5. Privileged live-capture command generation and error mapping.
+
+## Supabase Dev Setup
+
+Profile cloud sync now has a real Supabase-backed runtime path, but it only activates when these environment variables are present:
+
+1. `ICESNIFF_SUPABASE_URL`
+2. `ICESNIFF_SUPABASE_PUBLISHABLE_KEY`
+3. `ICESNIFF_SUPABASE_PROFILES_TABLE`
+
+Use `.env.supabase.example` as the copy/paste starting point.
+
+For local Xcode testing:
+
+1. Open the app scheme in Xcode.
+2. Edit the `Run` action environment variables.
+3. Add the `ICESNIFF_SUPABASE_*` values.
+4. Relaunch the app.
+
+App-side behavior:
+
+1. If the variables are missing, the app falls back to mock auth/sync and shows that cloud profiles are not configured.
+2. If the variables are present, the app uses real Supabase auth and profile sync.
+
+Expected Supabase backend setup:
+
+1. OAuth providers enabled for Google and GitHub.
+2. A `profiles` table in your Supabase Postgres database.
+3. One row per authenticated user.
+4. Table columns:
+   - `id` as the user ID primary key
+   - `preferences`
+   - `updated_at`
+
+The current app writes one profile row per user and uses the `updated_at` column for sync comparison.
 
 ## Current scope
 

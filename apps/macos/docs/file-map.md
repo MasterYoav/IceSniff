@@ -27,6 +27,12 @@ It defines:
 
 App-local documentation for the mac app track.
 
+Important current references:
+
+- `docs/profile-cloud-sync-plan.md`
+- `docs/appwrite-integration-outline.md`
+- `docs/supabase-auth-setup.md`
+
 ## Swift App
 
 ### `Sources/IceSniffMac/IceSniffMacApp.swift`
@@ -70,6 +76,18 @@ This file owns:
 - reusable cards and controls
 
 It is intentionally large because the app currently keeps most UI composition in one place.
+
+### `Sources/IceSniffMac/ProfileCloudSync.swift`
+
+Cloud auth and preference sync runtime.
+
+This file owns:
+
+- Supabase configuration parsing
+- Keychain-backed session storage
+- Google and GitHub OAuth runtime
+- session restoration
+- remote profile row fetch and push behavior
 
 ## Runtime Resources
 
