@@ -1181,9 +1181,6 @@ struct SettingsSectionView: View {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
 
-                Text("Set `ICESNIFF_REPO_ROOT` or `ICESNIFF_CLI_BIN` when launching outside repository root.")
-                    .font(appFont(model.fontChoice, .caption))
-                    .foregroundStyle(.secondary)
 
                 Spacer(minLength: 0)
             }
