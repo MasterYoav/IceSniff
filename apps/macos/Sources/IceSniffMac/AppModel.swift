@@ -39,7 +39,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     static let footerSections: [AppSection] = [.profile, .settings]
 }
 
-enum AppTheme: String, CaseIterable, Identifiable {
+enum AppTheme: String, CaseIterable, Identifiable, Codable {
     case defaultDark
     case defaultLight
     case ocean
@@ -68,7 +68,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
     }
 }
 
-enum AppFontChoice: String, CaseIterable, Identifiable {
+enum AppFontChoice: String, CaseIterable, Identifiable, Codable {
     case system
     case rounded
     case serif
@@ -86,7 +86,7 @@ enum AppFontChoice: String, CaseIterable, Identifiable {
     }
 }
 
-enum AppFontSizeStep: String {
+enum AppFontSizeStep: String, Codable {
     case extraSmall
     case small
     case medium
@@ -102,6 +102,225 @@ enum AppFontSizeStep: String {
         case .extraLarge: return 1.16
         }
     }
+}
+
+struct UserPreferences: Codable, Equatable {
+    static let currentSchemaVersion = 1
+
+    var theme: AppTheme
+    var fontChoice: AppFontChoice
+    var fontSizeStep: AppFontSizeStep
+    var schemaVersion: Int
+    var updatedAt: Date
+
+    init(
+        theme: AppTheme,
+        fontChoice: AppFontChoice,
+        fontSizeStep: AppFontSizeStep,
+        schemaVersion: Int = UserPreferences.currentSchemaVersion,
+        updatedAt: Date = .now
+    ) {
+        self.theme = theme
+        self.fontChoice = fontChoice
+        self.fontSizeStep = fontSizeStep
+        self.schemaVersion = schemaVersion
+        self.updatedAt = updatedAt
+    }
+
+    static let `default` = UserPreferences(
+        theme: .defaultDark,
+        fontChoice: .rounded,
+        fontSizeStep: .medium
+    )
+}
+
+final class PreferencesStore {
+    private enum Keys {
+        static let preferencesBlob = "icesniff.user_preferences"
+        static let appTheme = "icesniff.app_theme"
+        static let darkMode = "icesniff.dark_mode"
+        static let fontChoice = "icesniff.font_choice"
+        static let fontSizeStep = "icesniff.font_size_step"
+    }
+
+    private let defaults: UserDefaults
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        encoder.dateEncodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .iso8601
+    }
+
+    func load() -> UserPreferences {
+        if let data = defaults.data(forKey: Keys.preferencesBlob),
+           let preferences = try? decoder.decode(UserPreferences.self, from: data) {
+            return preferences
+        }
+
+        return loadLegacyPreferences()
+    }
+
+    func save(_ preferences: UserPreferences) {
+        if let data = try? encoder.encode(preferences) {
+            defaults.set(data, forKey: Keys.preferencesBlob)
+        }
+
+        // Keep legacy keys in sync during the migration so older development builds still read
+        // the same UI state when switching branches or binaries.
+        defaults.set(preferences.theme.rawValue, forKey: Keys.appTheme)
+        defaults.set(preferences.theme.isDark, forKey: Keys.darkMode)
+        defaults.set(preferences.fontChoice.rawValue, forKey: Keys.fontChoice)
+        defaults.set(preferences.fontSizeStep.rawValue, forKey: Keys.fontSizeStep)
+    }
+
+    private func loadLegacyPreferences() -> UserPreferences {
+        let theme: AppTheme
+        if let rawTheme = defaults.string(forKey: Keys.appTheme),
+           let persistedTheme = AppTheme(rawValue: rawTheme) {
+            theme = persistedTheme
+        } else {
+            let legacyDarkMode = defaults.object(forKey: Keys.darkMode) as? Bool ?? true
+            theme = legacyDarkMode ? .defaultDark : .defaultLight
+        }
+
+        let fontChoice: AppFontChoice
+        if let rawFontChoice = defaults.string(forKey: Keys.fontChoice),
+           let persistedFontChoice = AppFontChoice(rawValue: rawFontChoice) {
+            fontChoice = persistedFontChoice
+        } else {
+            fontChoice = .rounded
+        }
+
+        let fontSizeStep: AppFontSizeStep
+        if let rawFontSizeStep = defaults.string(forKey: Keys.fontSizeStep),
+           let persistedFontSizeStep = AppFontSizeStep(rawValue: rawFontSizeStep) {
+            fontSizeStep = persistedFontSizeStep
+        } else {
+            fontSizeStep = .medium
+        }
+
+        return UserPreferences(
+            theme: theme,
+            fontChoice: fontChoice,
+            fontSizeStep: fontSizeStep
+        )
+    }
+}
+
+enum AuthProvider: String, CaseIterable, Identifiable, Codable {
+    case google
+    case github
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .google:
+            return "Google"
+        case .github:
+            return "GitHub"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .google:
+            return "globe"
+        case .github:
+            return "chevron.left.forwardslash.chevron.right"
+        }
+    }
+
+}
+
+struct AuthSession: Equatable, Sendable {
+    let userID: String
+    let email: String?
+    let displayName: String?
+    let avatarURL: URL?
+    let provider: AuthProvider
+}
+
+enum SyncStatus: Equatable, Sendable {
+    case idle
+    case syncing
+    case synced(Date?)
+    case failed(String)
+
+    var title: String {
+        switch self {
+        case .idle:
+            return "Not synced yet"
+        case .syncing:
+            return "Syncing..."
+        case let .synced(date):
+            if let date {
+                return "Synced \(RelativeDateTimeFormatter().localizedString(for: date, relativeTo: .now))"
+            }
+            return "Synced"
+        case let .failed(message):
+            return "Sync failed: \(message)"
+        }
+    }
+}
+
+protocol AuthService: Sendable {
+    var currentSession: AuthSession? { get }
+    func signIn(with provider: AuthProvider) async throws -> AuthSession
+    func signOut() async throws
+}
+
+protocol ProfileSyncService: Sendable {
+    func pullPreferences(for session: AuthSession) async throws -> UserPreferences?
+    func pushPreferences(_ preferences: UserPreferences, for session: AuthSession) async throws
+}
+
+enum MockProfileError: LocalizedError {
+    case unsupported
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupported:
+            return "Cloud profile sync is not wired yet."
+        }
+    }
+}
+
+struct MockAuthService: AuthService {
+    var currentSession: AuthSession?
+
+    func signIn(with provider: AuthProvider) async throws -> AuthSession {
+        switch provider {
+        case .google:
+            return AuthSession(
+                userID: "mock-google-user",
+                email: "google-user@example.com",
+                displayName: "Google User",
+                avatarURL: nil,
+                provider: .google
+            )
+        case .github:
+            return AuthSession(
+                userID: "mock-github-user",
+                email: "github-user@example.com",
+                displayName: "GitHub User",
+                avatarURL: URL(string: "https://avatars.githubusercontent.com/u/9919?v=4"),
+                provider: .github
+            )
+        }
+    }
+
+    func signOut() async throws {}
+}
+
+struct MockProfileSyncService: ProfileSyncService {
+    func pullPreferences(for session: AuthSession) async throws -> UserPreferences? {
+        nil
+    }
+
+    func pushPreferences(_ preferences: UserPreferences, for session: AuthSession) async throws {}
 }
 
 enum CaptureSaveScope {
@@ -1038,6 +1257,9 @@ final class AppModel: ObservableObject {
     @Published var appTheme: AppTheme = .defaultDark
     @Published var fontChoice: AppFontChoice = .rounded
     @Published var fontSizeStep: AppFontSizeStep = .medium
+    @Published private(set) var authSession: AuthSession?
+    @Published private(set) var syncStatus: SyncStatus = .idle
+    @Published private(set) var profileStatusMessage = "Sign in to sync your preferences across Macs."
 
     @Published var capturePath = ""
     @Published var filterExpression = ""
@@ -1071,6 +1293,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var engineCapabilities = EngineCapabilities.fallback
 
     let repoRoot: URL
+    private let preferencesStore: PreferencesStore
+    private let authService: AuthService
+    private let profileSyncService: ProfileSyncService
+    private let cloudProfilesConfigured: Bool
+    private let cloudProfilesDiagnosticMessage: String
     private var liveCaptureHandle: LiveCaptureHandle?
     private var liveCapturePollTask: Task<Void, Never>?
 
@@ -1082,25 +1309,31 @@ final class AppModel: ObservableObject {
         fontSizeStep.scale
     }
 
-    init() {
+    init(
+        preferencesStore: PreferencesStore = PreferencesStore(),
+        authService: AuthService? = nil,
+        profileSyncService: ProfileSyncService? = nil
+    ) {
         repoRoot = Self.resolveRepoRoot()
-        if let rawTheme = UserDefaults.standard.string(forKey: "icesniff.app_theme"),
-           let persistedTheme = AppTheme(rawValue: rawTheme) {
-            appTheme = persistedTheme
+        self.preferencesStore = preferencesStore
+        let sessionStore = KeychainSessionStore()
+        cloudProfilesDiagnosticMessage = SupabaseConfiguration.diagnosticMessage()
+        if let configuration = SupabaseConfiguration() {
+            self.authService = authService ?? SupabaseAuthService(configuration: configuration, sessionStore: sessionStore)
+            self.profileSyncService = profileSyncService ?? SupabaseProfileSyncService(configuration: configuration, sessionStore: sessionStore)
+            cloudProfilesConfigured = true
         } else {
-            let legacyDarkMode = UserDefaults.standard.object(forKey: "icesniff.dark_mode") as? Bool ?? true
-            appTheme = legacyDarkMode ? .defaultDark : .defaultLight
+            self.authService = authService ?? MockAuthService()
+            self.profileSyncService = profileSyncService ?? MockProfileSyncService()
+            cloudProfilesConfigured = false
         }
-
-        if let rawFont = UserDefaults.standard.string(forKey: "icesniff.font_choice"),
-           let persistedFont = AppFontChoice(rawValue: rawFont) {
-            fontChoice = persistedFont
-        }
-
-        if let rawFontSize = UserDefaults.standard.string(forKey: "icesniff.font_size_step"),
-           let persistedFontSize = AppFontSizeStep(rawValue: rawFontSize) {
-            fontSizeStep = persistedFontSize
-        }
+        applyPreferences(preferencesStore.load())
+        authSession = self.authService.currentSession
+        profileStatusMessage = Self.initialProfileStatusMessage(
+            authSession: authSession,
+            cloudProfilesConfigured: cloudProfilesConfigured,
+            cloudProfilesDiagnosticMessage: cloudProfilesDiagnosticMessage
+        )
 
         Task {
             await loadEngineCapabilities()
@@ -1114,13 +1347,14 @@ final class AppModel: ObservableObject {
 
     func setTheme(_ theme: AppTheme) {
         appTheme = theme
-        UserDefaults.standard.set(theme.rawValue, forKey: "icesniff.app_theme")
-        UserDefaults.standard.set(theme.isDark, forKey: "icesniff.dark_mode")
+        persistPreferences()
+        enqueueProfileSync()
     }
 
     func setFontChoice(_ choice: AppFontChoice) {
         fontChoice = choice
-        UserDefaults.standard.set(choice.rawValue, forKey: "icesniff.font_choice")
+        persistPreferences()
+        enqueueProfileSync()
     }
 
     func increaseFontSize() {
@@ -1155,7 +1389,142 @@ final class AppModel: ObservableObject {
 
     private func setFontSizeStep(_ step: AppFontSizeStep) {
         fontSizeStep = step
-        UserDefaults.standard.set(step.rawValue, forKey: "icesniff.font_size_step")
+        persistPreferences()
+        enqueueProfileSync()
+    }
+
+    private func applyPreferences(_ preferences: UserPreferences) {
+        appTheme = preferences.theme
+        fontChoice = preferences.fontChoice
+        fontSizeStep = preferences.fontSizeStep
+    }
+
+    private func persistPreferences() {
+        preferencesStore.save(currentPreferences())
+    }
+
+    private func persistPreferences(_ preferences: UserPreferences) {
+        preferencesStore.save(preferences)
+    }
+
+    private func currentPreferences(updatedAt: Date = .now) -> UserPreferences {
+        UserPreferences(
+            theme: appTheme,
+            fontChoice: fontChoice,
+            fontSizeStep: fontSizeStep,
+            updatedAt: updatedAt
+        )
+    }
+
+    func signIn(with provider: AuthProvider) {
+        syncStatus = .syncing
+        profileStatusMessage = "Signing in with \(provider.title)..."
+
+        Task {
+            do {
+                let session = try await authService.signIn(with: provider)
+                await MainActor.run {
+                    authSession = session
+                    profileStatusMessage = "Signed in as \(session.displayName ?? session.email ?? session.userID)."
+                }
+                await syncProfileFromCloud()
+            } catch {
+                await MainActor.run {
+                    syncStatus = .failed(error.localizedDescription)
+                    profileStatusMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func signOutProfile() {
+        Task {
+            do {
+                try await authService.signOut()
+                await MainActor.run {
+                    authSession = nil
+                    syncStatus = .idle
+                    profileStatusMessage = "Signed out. Local preferences remain on this Mac."
+                }
+            } catch {
+                await MainActor.run {
+                    syncStatus = .failed(error.localizedDescription)
+                    profileStatusMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func syncProfileNow() {
+        Task {
+            await syncProfileFromCloud()
+        }
+    }
+
+    private func syncProfileFromCloud() async {
+        guard let session = authSession else {
+            await MainActor.run {
+                syncStatus = .idle
+                profileStatusMessage = cloudProfilesConfigured
+                    ? "Sign in to sync your preferences across Macs."
+                    : cloudProfilesDiagnosticMessage
+            }
+            return
+        }
+
+        await MainActor.run {
+            syncStatus = .syncing
+            profileStatusMessage = "Syncing profile..."
+        }
+
+        do {
+            let localPreferences = currentPreferences()
+            var resolvedPreferences = localPreferences
+
+            if let remotePreferences = try await profileSyncService.pullPreferences(for: session),
+               remotePreferences.updatedAt > localPreferences.updatedAt {
+                await MainActor.run {
+                    applyPreferences(remotePreferences)
+                    persistPreferences(remotePreferences)
+                }
+                resolvedPreferences = remotePreferences
+            }
+
+            try await profileSyncService.pushPreferences(resolvedPreferences, for: session)
+
+            await MainActor.run {
+                syncStatus = .synced(.now)
+                profileStatusMessage = "Profile synced for \(session.displayName ?? session.email ?? session.userID)."
+            }
+        } catch {
+            await MainActor.run {
+                syncStatus = .failed(error.localizedDescription)
+                profileStatusMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func enqueueProfileSync() {
+        guard authSession != nil else { return }
+        Task {
+            await syncProfileFromCloud()
+        }
+    }
+
+    private static func initialProfileStatusMessage(
+        authSession: AuthSession?,
+        cloudProfilesConfigured: Bool,
+        cloudProfilesDiagnosticMessage: String
+    ) -> String {
+        if let authSession {
+            return "Signed in as \(authSession.displayName ?? authSession.email ?? authSession.userID)."
+        }
+
+        if cloudProfilesConfigured {
+            return "Sign in to sync your preferences across Macs."
+        }
+
+        return cloudProfilesDiagnosticMessage
     }
 
     func setCapturePath(_ path: String) {

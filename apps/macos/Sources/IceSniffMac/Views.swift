@@ -317,7 +317,8 @@ struct SidebarView: View {
                         collapsed: model.sidebarCollapsed,
                         isSelected: model.selectedSection == section,
                         theme: model.appTheme,
-                        fontChoice: model.fontChoice
+                        fontChoice: model.fontChoice,
+                        circularWhenCollapsed: false
                     ) {
                         model.selectedSection = section
                     }
@@ -365,22 +366,24 @@ struct SidebarView: View {
                     collapsed: model.sidebarCollapsed,
                     isSelected: model.selectedSection == .settings,
                     theme: model.appTheme,
-                    fontChoice: model.fontChoice
+                    fontChoice: model.fontChoice,
+                    circularWhenCollapsed: true
                 ) {
                     model.selectedSection = .settings
                 }
 
-                SidebarButton(
+                SidebarProfileButton(
                     title: AppSection.profile.title,
-                    icon: AppSection.profile.iconSystemName,
                     collapsed: model.sidebarCollapsed,
                     isSelected: model.selectedSection == .profile,
                     theme: model.appTheme,
-                    fontChoice: model.fontChoice
+                    fontChoice: model.fontChoice,
+                    avatarURL: model.authSession?.avatarURL
                 ) {
                     model.selectedSection = .profile
                 }
             }
+            .frame(maxWidth: .infinity, alignment: model.sidebarCollapsed ? .center : .leading)
             .padding(.bottom, model.sidebarCollapsed ? 0 : 10)
         }
         .padding(.horizontal, model.sidebarCollapsed ? 10 : 12)
@@ -421,6 +424,7 @@ struct SidebarButton: View {
     let isSelected: Bool
     let theme: AppTheme
     let fontChoice: AppFontChoice
+    let circularWhenCollapsed: Bool
     let action: () -> Void
 
     private var darkMode: Bool { theme.isDark }
@@ -438,28 +442,145 @@ struct SidebarButton: View {
                 }
             }
             .foregroundStyle(isSelected ? Color.white : Color.primary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .frame(maxWidth: .infinity, alignment: collapsed ? .center : .leading)
+            .padding(.horizontal, collapsed && circularWhenCollapsed ? 0 : 12)
+            .padding(.vertical, collapsed && circularWhenCollapsed ? 0 : 9)
+            .frame(
+                maxWidth: collapsed && circularWhenCollapsed ? 48 : .infinity,
+                minHeight: collapsed && circularWhenCollapsed ? 48 : nil,
+                alignment: collapsed ? .center : .leading
+            )
             .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(
-                        isSelected
-                            ? accentTint(theme).opacity(darkMode ? 0.9 : 0.96)
-                            : Color.white.opacity(darkMode ? 0.02 : 0.18)
-                    )
+                Group {
+                    if collapsed && circularWhenCollapsed {
+                        Circle()
+                            .fill(
+                                isSelected
+                                    ? accentTint(theme).opacity(darkMode ? 0.9 : 0.96)
+                                    : Color.white.opacity(darkMode ? 0.02 : 0.18)
+                            )
+                    } else {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(
+                                isSelected
+                                    ? accentTint(theme).opacity(darkMode ? 0.9 : 0.96)
+                                    : Color.white.opacity(darkMode ? 0.02 : 0.18)
+                            )
+                    }
+                }
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(
-                        isSelected
-                            ? Color.white.opacity(0.16)
-                            : Color.white.opacity(darkMode ? 0.06 : 0.32),
-                        lineWidth: 1
-                    )
+                Group {
+                    if collapsed && circularWhenCollapsed {
+                        Circle()
+                            .stroke(
+                                isSelected
+                                    ? Color.white.opacity(0.16)
+                                    : Color.white.opacity(darkMode ? 0.06 : 0.32),
+                                lineWidth: 1
+                            )
+                    } else {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(
+                                isSelected
+                                    ? Color.white.opacity(0.16)
+                                    : Color.white.opacity(darkMode ? 0.06 : 0.32),
+                                lineWidth: 1
+                            )
+                    }
+                }
             }
         }
         .buttonStyle(.plain)
+    }
+}
+
+struct SidebarProfileButton: View {
+    let title: String
+    let collapsed: Bool
+    let isSelected: Bool
+    let theme: AppTheme
+    let fontChoice: AppFontChoice
+    let avatarURL: URL?
+    let action: () -> Void
+
+    private var darkMode: Bool { theme.isDark }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                sidebarAvatar
+
+                if !collapsed {
+                    Text(title)
+                        .font(appFont(fontChoice, .subheadline, weight: .semibold))
+                    Spacer(minLength: 0)
+                }
+            }
+            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .padding(.horizontal, collapsed ? 0 : 12)
+            .padding(.vertical, collapsed ? 0 : 9)
+            .frame(
+                maxWidth: collapsed ? 48 : .infinity,
+                minHeight: collapsed ? 48 : nil,
+                alignment: collapsed ? .center : .leading
+            )
+            .background {
+                Group {
+                    if collapsed {
+                        if isSelected {
+                            Circle()
+                                .fill(accentTint(theme).opacity(darkMode ? 0.9 : 0.96))
+                        }
+                    } else {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(
+                                isSelected
+                                    ? accentTint(theme).opacity(darkMode ? 0.9 : 0.96)
+                                    : Color.white.opacity(darkMode ? 0.02 : 0.18)
+                            )
+                    }
+                }
+            }
+            .overlay {
+                Group {
+                    if !collapsed {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.white.opacity(darkMode ? 0.06 : 0.26), lineWidth: 1)
+                    }
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var sidebarAvatar: some View {
+        Group {
+            if let avatarURL {
+                AsyncImage(url: avatarURL) { phase in
+                    switch phase {
+                    case let .success(image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    case .failure, .empty:
+                        fallbackAvatar
+                    @unknown default:
+                        fallbackAvatar
+                    }
+                }
+            } else {
+                fallbackAvatar
+            }
+        }
+        .frame(width: collapsed ? 48 : 22, height: collapsed ? 48 : 22)
+        .clipShape(Circle())
+    }
+
+    private var fallbackAvatar: some View {
+        Image(systemName: "person.crop.circle.fill")
+            .resizable()
+            .scaledToFit()
+            .foregroundStyle(isSelected ? Color.white : accentTint(theme))
     }
 }
 
@@ -520,7 +641,7 @@ struct DetailView: View {
                     case .transactions:
                         TransactionsSectionView(model: model)
                     case .profile:
-                        ProfileSectionView(theme: model.appTheme, fontChoice: model.fontChoice)
+                        ProfileSectionView(model: model)
                     case .settings:
                         SettingsSectionView(model: model)
                     }
@@ -1025,39 +1146,207 @@ struct TransactionsSectionView: View {
 }
 
 struct ProfileSectionView: View {
-    let theme: AppTheme
-    let fontChoice: AppFontChoice
-
-    private var darkMode: Bool { theme.isDark }
+    @ObservedObject var model: AppModel
 
     var body: some View {
-        LiquidCard(theme: theme, cornerRadius: 20, padding: 18) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 12) {
-                    Circle()
-                        .fill(accentTint(theme).opacity(0.35))
-                        .frame(width: 52, height: 52)
-                        .overlay {
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 20, weight: .bold))
-                                .foregroundStyle(Color.white)
-                        }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Profile")
-                            .font(appFont(fontChoice, .title3, weight: .bold))
-                        Text("Native identity and workspace preferences")
-                            .font(appFont(fontChoice, .caption))
-                            .foregroundStyle(.secondary)
-                    }
+        LiquidCard(theme: model.appTheme, cornerRadius: 20, padding: 18) {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Profile")
+                        .font(appFont(model.fontChoice, .title3, weight: .bold, scale: model.fontScale))
+                    Text("Account identity and preference sync")
+                        .font(appFont(model.fontChoice, .caption, scale: model.fontScale))
+                        .foregroundStyle(.secondary)
                 }
 
-                Text("Hook account/login configuration in this panel as we wire authentication.")
-                    .font(appFont(fontChoice, .subheadline))
-                    .foregroundStyle(.secondary)
+                if let session = model.authSession {
+                    signedInState(session: session)
+                } else {
+                    signedOutState
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+    }
+
+    private var signedOutState: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Sign in to keep your IceSniff setup consistent across Macs.")
+                .font(appFont(model.fontChoice, .subheadline, scale: model.fontScale))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 12) {
+                ForEach(AuthProvider.allCases) { provider in
+                    Button {
+                        model.signIn(with: provider)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: provider.symbolName)
+                            Text("Continue with \(provider.title)")
+                        }
+                        .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.white.opacity(model.darkMode ? 0.08 : 0.44))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            profileStatusCard
+        }
+    }
+
+    private func signedInState(session: AuthSession) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                profileAvatar(for: session)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(session.displayName ?? "Signed In")
+                        .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
+                    if let email = session.email {
+                        Text(email)
+                            .font(appFont(model.fontChoice, .caption, scale: model.fontScale))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Provider: \(session.provider.title)")
+                        .font(appFont(model.fontChoice, .caption, weight: .medium, scale: model.fontScale))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button("Sign Out") {
+                    model.signOutProfile()
+                }
+                .buttonStyle(.plain)
+                .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.white.opacity(model.darkMode ? 0.08 : 0.4))
+                )
+            }
+
+            HStack(spacing: 12) {
+                statCard(title: "Theme", value: model.appTheme.title)
+                statCard(title: "Font", value: model.fontChoice.title)
+                statCard(title: "Size", value: String(describing: model.fontSizeStep.rawValue))
+            }
+
+            HStack(spacing: 12) {
+                Button("Sync Now") {
+                    model.syncProfileNow()
+                }
+                .buttonStyle(.plain)
+                .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(accentTint(model.appTheme).opacity(model.darkMode ? 0.22 : 0.18))
+                )
+
+                Text(model.syncStatus.title)
+                    .font(appFont(model.fontChoice, .caption, weight: .medium, scale: model.fontScale))
+                    .foregroundStyle(.secondary)
+            }
+
+            profileStatusCard
+        }
+    }
+
+    @ViewBuilder
+    private func profileAvatar(for session: AuthSession) -> some View {
+        Group {
+            if let avatarURL = session.avatarURL {
+                AsyncImage(url: avatarURL) { phase in
+                    switch phase {
+                    case let .success(image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    case .failure, .empty:
+                        Image(systemName: "person.crop.circle.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .padding(8)
+                            .foregroundStyle(accentTint(model.appTheme))
+                    @unknown default:
+                        Image(systemName: "person.crop.circle.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .padding(8)
+                            .foregroundStyle(accentTint(model.appTheme))
+                    }
+                }
+            } else {
+                Image(systemName: "person.crop.circle.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(8)
+                    .foregroundStyle(accentTint(model.appTheme))
+            }
+        }
+        .frame(width: 56, height: 56)
+        .background(
+            Circle()
+                .fill(Color.white.opacity(model.darkMode ? 0.08 : 0.4))
+        )
+        .clipShape(Circle())
+    }
+
+    private var profileStatusCard: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color.white.opacity(model.darkMode ? 0.06 : 0.4))
+            .overlay(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text("Profile Status")
+                            .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
+
+                        Spacer(minLength: 0)
+
+                        Button {
+                            copyToPasteboard(model.profileStatusMessage)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Copy profile status")
+                    }
+
+                    Text(model.profileStatusMessage)
+                        .font(appFont(model.fontChoice, .caption, scale: model.fontScale))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(14)
+            }
+            .frame(maxWidth: .infinity, minHeight: 92)
+    }
+
+    private func statCard(title: String, value: String) -> some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color.white.opacity(model.darkMode ? 0.06 : 0.4))
+            .overlay(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(appFont(model.fontChoice, .caption, weight: .medium, scale: model.fontScale))
+                        .foregroundStyle(.secondary)
+                    Text(value)
+                        .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
+                }
+                .padding(14)
+            }
+            .frame(maxWidth: .infinity, minHeight: 72)
     }
 }
 
