@@ -75,7 +75,6 @@ struct AppModelTests {
     }
 
     @Test
-    @Test
     @MainActor
     func appModelSignInUpdatesSessionAndStatus() async throws {
         let suiteName = "IceSniffMacTests.profile.signin.\(UUID().uuidString)"
@@ -109,6 +108,7 @@ struct AppModelTests {
                 userID: "seed-user",
                 email: "seed@example.com",
                 displayName: "Seed",
+                avatarURL: nil,
                 provider: .google
             )),
             profileSyncService: MockProfileSyncService()
