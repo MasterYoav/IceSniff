@@ -117,7 +117,7 @@ private func copyToPasteboard(_ value: String) {
     pasteboard.setString(value, forType: .string)
 }
 
-private func sidebarIconImage(darkMode: Bool) -> NSImage? {
+func bundledAppIconImage() -> NSImage? {
     if let iconBundleURL = Bundle.module.url(forResource: "icon", withExtension: "icon"),
        let iconImage = iconImageFromBundle(at: iconBundleURL) {
         return iconImage
@@ -275,7 +275,7 @@ struct SidebarView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Group {
-                    if let nsImage = sidebarIconImage(darkMode: model.darkMode) {
+                    if let nsImage = bundledAppIconImage() {
                         Image(nsImage: nsImage)
                             .resizable()
                             .scaledToFit()

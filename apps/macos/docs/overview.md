@@ -72,6 +72,16 @@ The app currently exposes these sections:
 - `Profile`
 - `Settings`
 
+The `Profile` section is no longer placeholder UI.
+
+It now includes:
+
+- real GitHub sign-in
+- real Google sign-in
+- Supabase-backed preference sync
+- Keychain-backed session persistence
+- remote avatar display
+
 The `Packets` section is the operational center for:
 
 - opening captures
@@ -108,3 +118,19 @@ If you are adding a feature, prefer this order:
 3. UI in `Views.swift`
 
 That keeps the app thin and the engine authoritative.
+
+## Current Status Snapshot
+
+At the end of the current implementation phase, the mac app has:
+
+- native packet browsing and live capture
+- bundled Rust analysis and capture helpers
+- real Supabase-backed profile sync
+- Google and GitHub auth
+- GitHub Actions CI for CLI and mac app validation
+
+Open follow-up areas still worth improving later:
+
+- bundle-level macOS app icon metadata beyond runtime Dock icon assignment
+- production signing/notarization polish
+- additional profile fields beyond UI preferences

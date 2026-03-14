@@ -119,6 +119,34 @@ Current font set:
 - Serif
 - Monospaced
 
+## Profile Cloud Sync
+
+The `Profile` section is now live.
+
+Users can:
+
+- sign in with GitHub
+- sign in with Google
+- sign out
+- see provider identity and avatar
+- sync preferences to Supabase
+- restore preferences on another Mac after sign-in
+
+Current cloud-synced preferences:
+
+- theme
+- font family
+- font size step
+
+Current provider scope:
+
+- Google
+- GitHub
+
+Not currently supported:
+
+- Apple sign-in
+
 ## Visual Design
 
 The mac app currently uses:
