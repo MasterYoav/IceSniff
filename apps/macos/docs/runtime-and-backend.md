@@ -112,3 +112,28 @@ The app should not rely on:
 - Wireshark being installed
 
 Those are development conveniences only, not release requirements.
+
+## Cloud Profile Runtime
+
+The app now also has a cloud-backed profile runtime in Swift.
+
+That runtime lives in `ProfileCloudSync.swift` and is responsible for:
+
+- Supabase configuration parsing from environment variables
+- Keychain-backed auth session storage
+- browser-based OAuth sign-in
+- provider identity normalization
+- reading and writing the `profiles` row in Supabase
+
+Current supported providers:
+
+- Google
+- GitHub
+
+Apple sign-in is intentionally not part of the current runtime.
+
+## Dock Icon Behavior
+
+The app uses the bundled `icon.icon` asset as the preferred source for the running application icon.
+
+At launch, the app sets `NSApp.applicationIconImage` from the bundled icon so the running app uses the official IceSniff icon in the Dock.

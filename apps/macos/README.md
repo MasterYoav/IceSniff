@@ -151,6 +151,8 @@ The current app writes one profile row per user and uses the `updated_at` column
 - Native frosted, collapsible sidebar
 - Separate section views (Capture, Packets, Stats, Conversations, Streams, Transactions, Profile, Settings)
 - Uses the official light app icon in the sidebar
+- Uses the official bundled icon as the running Dock icon
 - Loads capture data through CLI JSON commands
 - One-time privileged live-capture setup on macOS
 - Bundled analysis backend and bundled capture helper
+- Real Supabase-backed profile sync with Google and GitHub sign-in

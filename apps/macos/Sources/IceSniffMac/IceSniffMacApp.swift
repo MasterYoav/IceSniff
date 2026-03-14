@@ -29,6 +29,9 @@ struct WindowChromeConfigurator: NSViewRepresentable {
         window.toolbar?.showsBaselineSeparator = false
         window.makeKeyAndOrderFront(nil)
         NSApp.setActivationPolicy(.regular)
+        if let iconImage = bundledAppIconImage() {
+            NSApp.applicationIconImage = iconImage
+        }
         NSApp.activate(ignoringOtherApps: true)
     }
 }
