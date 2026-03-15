@@ -6,17 +6,31 @@ import Supabase
 struct SupabaseConfiguration: Equatable, Sendable {
     static let defaultRedirectURL = URL(string: "icesniff://auth/callback")!
 
+    private static func configuredValue(
+        for key: String,
+        environment: [String: String],
+        bundle: Bundle = .main
+    ) -> String? {
+        if let environmentValue = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty {
+            return environmentValue
+        }
+
+        return (bundle.object(forInfoDictionaryKey: key) as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nonEmpty
+    }
+
     let url: URL
     let publishableKey: String
-    let profilesTable: String
     let redirectURL: URL
 
-    init?(environment: [String: String] = ProcessInfo.processInfo.environment) {
+    init?(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundle: Bundle = .main
+    ) {
         guard
-            let urlString = environment["ICESNIFF_SUPABASE_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-            let publishableKey = environment["ICESNIFF_SUPABASE_PUBLISHABLE_KEY"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-            !urlString.isEmpty,
-            !publishableKey.isEmpty,
+            let urlString = Self.configuredValue(for: "ICESNIFF_SUPABASE_URL", environment: environment, bundle: bundle),
+            let publishableKey = Self.configuredValue(for: "ICESNIFF_SUPABASE_PUBLISHABLE_KEY", environment: environment, bundle: bundle),
             let url = URL(string: urlString)
         else {
             return nil
@@ -24,35 +38,31 @@ struct SupabaseConfiguration: Equatable, Sendable {
 
         self.url = url
         self.publishableKey = publishableKey
-        profilesTable = environment["ICESNIFF_SUPABASE_PROFILES_TABLE"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nonEmpty ?? "profiles"
-        redirectURL = environment["ICESNIFF_SUPABASE_REDIRECT_URL"]
-            .flatMap { URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        redirectURL = Self.configuredValue(for: "ICESNIFF_SUPABASE_REDIRECT_URL", environment: environment, bundle: bundle)
+            .flatMap(URL.init(string:))
             ?? Self.defaultRedirectURL
     }
 
-    static func diagnosticMessage(environment: [String: String] = ProcessInfo.processInfo.environment) -> String {
+    static func diagnosticMessage(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundle: Bundle = .main
+    ) -> String {
         let requiredKeys = [
             "ICESNIFF_SUPABASE_URL",
             "ICESNIFF_SUPABASE_PUBLISHABLE_KEY"
         ]
 
         let missingKeys = requiredKeys.filter { key in
-            environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty == nil
+            configuredValue(for: key, environment: environment, bundle: bundle) == nil
         }
 
         if missingKeys.isEmpty {
-            let table = environment["ICESNIFF_SUPABASE_PROFILES_TABLE"]?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .nonEmpty ?? "profiles"
-            let redirectURL = environment["ICESNIFF_SUPABASE_REDIRECT_URL"]?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .nonEmpty ?? Self.defaultRedirectURL.absoluteString
-            return "Supabase config detected. Profiles table: \(table). Redirect URL: \(redirectURL)."
+            let redirectURL = configuredValue(for: "ICESNIFF_SUPABASE_REDIRECT_URL", environment: environment, bundle: bundle)
+                ?? Self.defaultRedirectURL.absoluteString
+            return "Auth config detected. Redirect URL: \(redirectURL)."
         }
 
-        return "Supabase config missing: \(missingKeys.joined(separator: ", "))"
+        return "Sign-in unavailable. Missing config: \(missingKeys.joined(separator: ", "))"
     }
 }
 
@@ -80,10 +90,10 @@ final class KeychainSessionStore: @unchecked Sendable, AuthLocalStorage {
             addQuery[kSecValueData] = value
             let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
             guard addStatus == errSecSuccess else {
-                throw SupabaseProfileError.keychainFailure("Unable to save session data (\(addStatus)).")
+                throw CloudProfileConfigurationError.missingConfiguration("Unable to save session data (\(addStatus)).")
             }
         } else if updateStatus != errSecSuccess {
-            throw SupabaseProfileError.keychainFailure("Unable to update session data (\(updateStatus)).")
+            throw CloudProfileConfigurationError.missingConfiguration("Unable to update session data (\(updateStatus)).")
         }
     }
 
@@ -102,7 +112,7 @@ final class KeychainSessionStore: @unchecked Sendable, AuthLocalStorage {
             return nil
         }
         guard status == errSecSuccess else {
-            throw SupabaseProfileError.keychainFailure("Unable to load session data (\(status)).")
+            throw CloudProfileConfigurationError.missingConfiguration("Unable to load session data (\(status)).")
         }
         return item as? Data
     }
@@ -115,7 +125,7 @@ final class KeychainSessionStore: @unchecked Sendable, AuthLocalStorage {
         ]
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw SupabaseProfileError.keychainFailure("Unable to remove session data (\(status)).")
+            throw CloudProfileConfigurationError.missingConfiguration("Unable to remove session data (\(status)).")
         }
     }
 
@@ -137,45 +147,7 @@ final class KeychainSessionStore: @unchecked Sendable, AuthLocalStorage {
     static let storageKey = Constants.storageKey
 }
 
-enum SupabaseProfileError: LocalizedError {
-    case notConfigured
-    case keychainFailure(String)
-    case invalidUserIdentifier
-    case invalidPreferencesPayload
-
-    var errorDescription: String? {
-        switch self {
-        case .notConfigured:
-            return "Cloud profiles are not configured for this build yet."
-        case let .keychainFailure(message):
-            return message
-        case .invalidUserIdentifier:
-            return "Supabase returned an unexpected user identifier."
-        case .invalidPreferencesPayload:
-            return "The saved cloud profile contains invalid preference data."
-        }
-    }
-}
-
-private struct SupabaseProfileRow: Codable, Sendable {
-    let id: UUID
-    let preferences: String
-    let updatedAt: String
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case preferences
-        case updatedAt = "updated_at"
-    }
-}
-
 private enum SupabaseRuntime {
-    static func timestampFormatter() -> ISO8601DateFormatter {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }
-
     static func authProvider(for provider: AuthProvider) -> Provider {
         switch provider {
         case .google:
@@ -289,76 +261,8 @@ final class SupabaseAuthService: AuthService, @unchecked Sendable {
     }
 }
 
-final class SupabaseProfileSyncService: ProfileSyncService, @unchecked Sendable {
-    private let client: SupabaseClient
-
-    init(configuration: SupabaseConfiguration, sessionStore: KeychainSessionStore) {
-        client = SupabaseClient(
-            supabaseURL: configuration.url,
-            supabaseKey: configuration.publishableKey,
-            options: SupabaseClientOptions(
-                auth: .init(
-                    storage: sessionStore,
-                    redirectToURL: configuration.redirectURL,
-                    storageKey: KeychainSessionStore.storageKey,
-                    emitLocalSessionAsInitialSession: true
-                )
-            )
-        )
-        profilesTable = configuration.profilesTable
-    }
-
-    private let profilesTable: String
-    private let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        return encoder
-    }()
-    private let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
-    }()
-
-    func pullPreferences(for session: AuthSession) async throws -> UserPreferences? {
-        let response: PostgrestResponse<[SupabaseProfileRow]> = try await client
-            .from(profilesTable)
-            .select()
-            .eq("id", value: session.userID)
-            .execute()
-        let rows = response.value
-        guard let row = rows.first else {
-            return nil
-        }
-
-        guard let data = row.preferences.data(using: String.Encoding.utf8) else {
-            throw SupabaseProfileError.invalidPreferencesPayload
-        }
-
-        var preferences = try decoder.decode(UserPreferences.self, from: data)
-        if let updatedAt = SupabaseRuntime.timestampFormatter().date(from: row.updatedAt) {
-            preferences.updatedAt = updatedAt
-        }
-        return preferences
-    }
-
-    func pushPreferences(_ preferences: UserPreferences, for session: AuthSession) async throws {
-        guard let userID = UUID(uuidString: session.userID) else {
-            throw SupabaseProfileError.invalidUserIdentifier
-        }
-
-        let preferencesData = try encoder.encode(preferences)
-        let row = SupabaseProfileRow(
-            id: userID,
-            preferences: String(decoding: preferencesData, as: UTF8.self),
-            updatedAt: SupabaseRuntime.timestampFormatter().string(from: preferences.updatedAt)
-        )
-
-        try await client
-            .from(profilesTable)
-            .upsert(row, onConflict: "id", returning: .minimal)
-            .execute()
-    }
+enum CloudProfilesFeature {
+    static let unavailableMessage = "Cloud profile sync is temporarily unavailable. Sign-in is still available, but preferences stay local on this Mac."
 }
 
 private extension String {

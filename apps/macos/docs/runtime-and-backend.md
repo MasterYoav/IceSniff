@@ -113,9 +113,7 @@ The app should not rely on:
 
 Those are development conveniences only, not release requirements.
 
-## Cloud Profile Runtime
-
-The app now also has a cloud-backed profile runtime in Swift.
+## Profile Runtime
 
 That runtime lives in `ProfileCloudSync.swift` and is responsible for:
 
@@ -123,7 +121,7 @@ That runtime lives in `ProfileCloudSync.swift` and is responsible for:
 - Keychain-backed auth session storage
 - browser-based OAuth sign-in
 - provider identity normalization
-- reading and writing the `profiles` row in Supabase
+- session restoration across launches
 
 Current supported providers:
 
@@ -132,8 +130,12 @@ Current supported providers:
 
 Apple sign-in is intentionally not part of the current runtime.
 
+Cloud preference sync is currently disabled in the public build. Theme and font preferences are stored locally via `PreferencesStore`.
+
 ## Dock Icon Behavior
 
 The app uses the bundled `icon.icon` asset as the preferred source for the running application icon.
 
 At launch, the app sets `NSApp.applicationIconImage` from the bundled icon so the running app uses the official IceSniff icon in the Dock.
+
+For packaged release builds, `scripts/release-macos.sh` also stamps the `.app` bundle with a custom Finder icon before signing. That gives Finder and the Dock a packaged app icon even before the app launches.

@@ -78,9 +78,9 @@ It now includes:
 
 - real GitHub sign-in
 - real Google sign-in
-- Supabase-backed preference sync
 - Keychain-backed session persistence
 - remote avatar display
+- local-only preference storage in the public build
 
 The `Packets` section is the operational center for:
 
@@ -125,8 +125,8 @@ At the end of the current implementation phase, the mac app has:
 
 - native packet browsing and live capture
 - bundled Rust analysis and capture helpers
-- real Supabase-backed profile sync
 - Google and GitHub auth
+- local-only theme/font preference persistence
 - GitHub Actions CI for CLI and mac app validation
 
 Open follow-up areas still worth improving later:

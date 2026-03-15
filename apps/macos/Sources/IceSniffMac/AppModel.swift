@@ -107,6 +107,20 @@ enum AppFontSizeStep: String, Codable {
 struct UserPreferences: Codable, Equatable {
     static let currentSchemaVersion = 1
 
+    private static func codingDateFormatter() -> ISO8601DateFormatter {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case theme
+        case fontChoice
+        case fontSizeStep
+        case schemaVersion
+        case updatedAt
+    }
+
     var theme: AppTheme
     var fontChoice: AppFontChoice
     var fontSizeStep: AppFontSizeStep
@@ -132,6 +146,34 @@ struct UserPreferences: Codable, Equatable {
         fontChoice: .rounded,
         fontSizeStep: .medium
     )
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Self.default
+
+        theme = try container.decodeIfPresent(AppTheme.self, forKey: .theme) ?? defaults.theme
+        fontChoice = try container.decodeIfPresent(AppFontChoice.self, forKey: .fontChoice) ?? defaults.fontChoice
+        fontSizeStep = try container.decodeIfPresent(AppFontSizeStep.self, forKey: .fontSizeStep) ?? defaults.fontSizeStep
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? Self.currentSchemaVersion
+
+        if let timestamp = try container.decodeIfPresent(String.self, forKey: .updatedAt),
+           let parsedDate = Self.codingDateFormatter().date(from: timestamp) {
+            updatedAt = parsedDate
+        } else if let date = try container.decodeIfPresent(Date.self, forKey: .updatedAt) {
+            updatedAt = date
+        } else {
+            updatedAt = defaults.updatedAt
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(theme, forKey: .theme)
+        try container.encode(fontChoice, forKey: .fontChoice)
+        try container.encode(fontSizeStep, forKey: .fontSizeStep)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(Self.codingDateFormatter().string(from: updatedAt), forKey: .updatedAt)
+    }
 }
 
 final class PreferencesStore {
@@ -153,6 +195,14 @@ final class PreferencesStore {
         decoder.dateDecodingStrategy = .iso8601
     }
 
+    func loadPersistedPreferences() -> UserPreferences? {
+        guard hasPersistedPreferences else {
+            return nil
+        }
+
+        return load()
+    }
+
     func load() -> UserPreferences {
         if let data = defaults.data(forKey: Keys.preferencesBlob),
            let preferences = try? decoder.decode(UserPreferences.self, from: data) {
@@ -160,6 +210,17 @@ final class PreferencesStore {
         }
 
         return loadLegacyPreferences()
+    }
+
+    private var hasPersistedPreferences: Bool {
+        if defaults.data(forKey: Keys.preferencesBlob) != nil {
+            return true
+        }
+
+        return defaults.object(forKey: Keys.appTheme) != nil
+            || defaults.object(forKey: Keys.darkMode) != nil
+            || defaults.object(forKey: Keys.fontChoice) != nil
+            || defaults.object(forKey: Keys.fontSizeStep) != nil
     }
 
     func save(_ preferences: UserPreferences) {
@@ -277,15 +338,35 @@ protocol ProfileSyncService: Sendable {
     func pushPreferences(_ preferences: UserPreferences, for session: AuthSession) async throws
 }
 
-enum MockProfileError: LocalizedError {
-    case unsupported
+enum CloudProfileConfigurationError: LocalizedError {
+    case missingConfiguration(String)
 
     var errorDescription: String? {
         switch self {
-        case .unsupported:
-            return "Cloud profile sync is not wired yet."
+        case let .missingConfiguration(message):
+            return message
         }
     }
+}
+
+struct DisabledAuthService: AuthService {
+    let diagnosticMessage: String
+
+    var currentSession: AuthSession?
+
+    func signIn(with provider: AuthProvider) async throws -> AuthSession {
+        throw CloudProfileConfigurationError.missingConfiguration(diagnosticMessage)
+    }
+
+    func signOut() async throws {}
+}
+
+struct DisabledProfileSyncService: ProfileSyncService {
+    func pullPreferences(for session: AuthSession) async throws -> UserPreferences? {
+        nil
+    }
+
+    func pushPreferences(_ preferences: UserPreferences, for session: AuthSession) async throws {}
 }
 
 struct MockAuthService: AuthService {
@@ -1259,7 +1340,7 @@ final class AppModel: ObservableObject {
     @Published var fontSizeStep: AppFontSizeStep = .medium
     @Published private(set) var authSession: AuthSession?
     @Published private(set) var syncStatus: SyncStatus = .idle
-    @Published private(set) var profileStatusMessage = "Sign in to sync your preferences across Macs."
+    @Published private(set) var profileStatusMessage = CloudProfilesFeature.unavailableMessage
 
     @Published var capturePath = ""
     @Published var filterExpression = ""
@@ -1309,6 +1390,10 @@ final class AppModel: ObservableObject {
         fontSizeStep.scale
     }
 
+    var cloudProfilesAvailable: Bool {
+        cloudProfilesConfigured
+    }
+
     init(
         preferencesStore: PreferencesStore = PreferencesStore(),
         authService: AuthService? = nil,
@@ -1320,13 +1405,12 @@ final class AppModel: ObservableObject {
         cloudProfilesDiagnosticMessage = SupabaseConfiguration.diagnosticMessage()
         if let configuration = SupabaseConfiguration() {
             self.authService = authService ?? SupabaseAuthService(configuration: configuration, sessionStore: sessionStore)
-            self.profileSyncService = profileSyncService ?? SupabaseProfileSyncService(configuration: configuration, sessionStore: sessionStore)
             cloudProfilesConfigured = true
         } else {
-            self.authService = authService ?? MockAuthService()
-            self.profileSyncService = profileSyncService ?? MockProfileSyncService()
+            self.authService = authService ?? DisabledAuthService(diagnosticMessage: cloudProfilesDiagnosticMessage)
             cloudProfilesConfigured = false
         }
+        self.profileSyncService = profileSyncService ?? DisabledProfileSyncService()
         applyPreferences(preferencesStore.load())
         authSession = self.authService.currentSession
         profileStatusMessage = Self.initialProfileStatusMessage(
@@ -1348,13 +1432,11 @@ final class AppModel: ObservableObject {
     func setTheme(_ theme: AppTheme) {
         appTheme = theme
         persistPreferences()
-        enqueueProfileSync()
     }
 
     func setFontChoice(_ choice: AppFontChoice) {
         fontChoice = choice
         persistPreferences()
-        enqueueProfileSync()
     }
 
     func increaseFontSize() {
@@ -1390,7 +1472,6 @@ final class AppModel: ObservableObject {
     private func setFontSizeStep(_ step: AppFontSizeStep) {
         fontSizeStep = step
         persistPreferences()
-        enqueueProfileSync()
     }
 
     private func applyPreferences(_ preferences: UserPreferences) {
@@ -1417,7 +1498,6 @@ final class AppModel: ObservableObject {
     }
 
     func signIn(with provider: AuthProvider) {
-        syncStatus = .syncing
         profileStatusMessage = "Signing in with \(provider.title)..."
 
         Task {
@@ -1425,9 +1505,9 @@ final class AppModel: ObservableObject {
                 let session = try await authService.signIn(with: provider)
                 await MainActor.run {
                     authSession = session
-                    profileStatusMessage = "Signed in as \(session.displayName ?? session.email ?? session.userID)."
+                    syncStatus = .idle
+                    profileStatusMessage = "Signed in as \(session.displayName ?? session.email ?? session.userID). Preferences stay local on this Mac."
                 }
-                await syncProfileFromCloud()
             } catch {
                 await MainActor.run {
                     syncStatus = .failed(error.localizedDescription)
@@ -1456,58 +1536,13 @@ final class AppModel: ObservableObject {
     }
 
     func syncProfileNow() {
-        Task {
-            await syncProfileFromCloud()
-        }
+        profileStatusMessage = CloudProfilesFeature.unavailableMessage
     }
 
     private func syncProfileFromCloud() async {
-        guard let session = authSession else {
-            await MainActor.run {
-                syncStatus = .idle
-                profileStatusMessage = cloudProfilesConfigured
-                    ? "Sign in to sync your preferences across Macs."
-                    : cloudProfilesDiagnosticMessage
-            }
-            return
-        }
-
         await MainActor.run {
-            syncStatus = .syncing
-            profileStatusMessage = "Syncing profile..."
-        }
-
-        do {
-            let localPreferences = currentPreferences()
-            var resolvedPreferences = localPreferences
-
-            if let remotePreferences = try await profileSyncService.pullPreferences(for: session),
-               remotePreferences.updatedAt > localPreferences.updatedAt {
-                await MainActor.run {
-                    applyPreferences(remotePreferences)
-                    persistPreferences(remotePreferences)
-                }
-                resolvedPreferences = remotePreferences
-            }
-
-            try await profileSyncService.pushPreferences(resolvedPreferences, for: session)
-
-            await MainActor.run {
-                syncStatus = .synced(.now)
-                profileStatusMessage = "Profile synced for \(session.displayName ?? session.email ?? session.userID)."
-            }
-        } catch {
-            await MainActor.run {
-                syncStatus = .failed(error.localizedDescription)
-                profileStatusMessage = error.localizedDescription
-            }
-        }
-    }
-
-    private func enqueueProfileSync() {
-        guard authSession != nil else { return }
-        Task {
-            await syncProfileFromCloud()
+            syncStatus = .idle
+            profileStatusMessage = CloudProfilesFeature.unavailableMessage
         }
     }
 
@@ -1517,11 +1552,11 @@ final class AppModel: ObservableObject {
         cloudProfilesDiagnosticMessage: String
     ) -> String {
         if let authSession {
-            return "Signed in as \(authSession.displayName ?? authSession.email ?? authSession.userID)."
+            return "Signed in as \(authSession.displayName ?? authSession.email ?? authSession.userID). Preferences stay local on this Mac."
         }
 
         if cloudProfilesConfigured {
-            return "Sign in to sync your preferences across Macs."
+            return "Sign in with Google or GitHub. Preferences stay local on this Mac."
         }
 
         return cloudProfilesDiagnosticMessage

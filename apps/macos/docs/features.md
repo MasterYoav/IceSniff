@@ -129,14 +129,7 @@ Users can:
 - sign in with Google
 - sign out
 - see provider identity and avatar
-- sync preferences to Supabase
-- restore preferences on another Mac after sign-in
-
-Current cloud-synced preferences:
-
-- theme
-- font family
-- font size step
+- keep theme, font family, and font size saved locally on the current Mac
 
 Current provider scope:
 
@@ -146,6 +139,7 @@ Current provider scope:
 Not currently supported:
 
 - Apple sign-in
+- cloud-backed preference sync in the public build
 
 ## Visual Design
 

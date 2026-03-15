@@ -9,10 +9,9 @@ For the full app-specific documentation set, start here:
 - `docs/file-map.md`
 - `docs/runtime-and-backend.md`
 - `docs/features.md`
-- `docs/profile-cloud-sync-plan.md`
+- `docs/profile-cloud-sync-plan.md` (historical note; sync is currently disabled)
 - `docs/appwrite-integration-outline.md`
 - `docs/supabase-auth-setup.md`
-- `.env.supabase.example`
 
 Repository hygiene for this app track:
 
@@ -73,6 +72,8 @@ ICESNIFF_NOTARY_KEYCHAIN_PROFILE="notary-profile" \
 ./scripts/release-macos.sh
 ```
 
+The release script also stamps the built `.app` bundle with a Finder-level custom icon before signing so Finder and the Dock use the packaged app icon without relying only on the runtime Dock override.
+
 Environment variables:
 
 1. `ICESNIFF_SIGNING_IDENTITY`
@@ -112,15 +113,14 @@ Current coverage includes:
 4. Engine info / capability payload compatibility.
 5. Privileged live-capture command generation and error mapping.
 
-## Supabase Dev Setup
+## Supabase Auth Setup
 
-Profile cloud sync now has a real Supabase-backed runtime path, but it only activates when these environment variables are present:
+The public build keeps Google/GitHub sign-in, but cloud preference sync is currently disabled.
+Supabase is only used for browser-based auth and session restoration when these environment variables are present:
 
 1. `ICESNIFF_SUPABASE_URL`
 2. `ICESNIFF_SUPABASE_PUBLISHABLE_KEY`
-3. `ICESNIFF_SUPABASE_PROFILES_TABLE`
-
-Use `.env.supabase.example` as the copy/paste starting point.
+3. `ICESNIFF_SUPABASE_REDIRECT_URL` (optional, defaults to `icesniff://auth/callback`)
 
 For local Xcode testing:
 
@@ -131,20 +131,9 @@ For local Xcode testing:
 
 App-side behavior:
 
-1. If the variables are missing, the app falls back to mock auth/sync and shows that cloud profiles are not configured.
-2. If the variables are present, the app uses real Supabase auth and profile sync.
-
-Expected Supabase backend setup:
-
-1. OAuth providers enabled for Google and GitHub.
-2. A `profiles` table in your Supabase Postgres database.
-3. One row per authenticated user.
-4. Table columns:
-   - `id` as the user ID primary key
-   - `preferences`
-   - `updated_at`
-
-The current app writes one profile row per user and uses the `updated_at` column for sync comparison.
+1. If the variables are missing, sign-in is unavailable and the `Profile` screen explains what is missing.
+2. If the variables are present, the app uses real Supabase auth for Google and GitHub.
+3. Theme, font family, and font size remain local-only preferences in the public build.
 
 ## Current scope
 
@@ -152,7 +141,9 @@ The current app writes one profile row per user and uses the `updated_at` column
 - Separate section views (Capture, Packets, Stats, Conversations, Streams, Transactions, Profile, Settings)
 - Uses the official light app icon in the sidebar
 - Uses the official bundled icon as the running Dock icon
+- Release packaging stamps the `.app` bundle with a packaged Finder/Dock icon
 - Loads capture data through CLI JSON commands
 - One-time privileged live-capture setup on macOS
 - Bundled analysis backend and bundled capture helper
-- Real Supabase-backed profile sync with Google and GitHub sign-in
+- Real Google and GitHub sign-in through Supabase auth
+- Local-only preferences in the public build

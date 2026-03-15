@@ -29,7 +29,7 @@ App-local documentation for the mac app track.
 
 Important current references:
 
-- `docs/profile-cloud-sync-plan.md`
+- `docs/profile-cloud-sync-plan.md` (historical design note)
 - `docs/appwrite-integration-outline.md`
 - `docs/supabase-auth-setup.md`
 
@@ -79,7 +79,7 @@ It is intentionally large because the app currently keeps most UI composition in
 
 ### `Sources/IceSniffMac/ProfileCloudSync.swift`
 
-Cloud auth and preference sync runtime.
+Cloud auth runtime.
 
 This file owns:
 
@@ -87,7 +87,7 @@ This file owns:
 - Keychain-backed session storage
 - Google and GitHub OAuth runtime
 - session restoration
-- remote profile row fetch and push behavior
+- public-build cloud-sync disabled messaging
 
 ## Runtime Resources
 

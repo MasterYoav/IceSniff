@@ -24,6 +24,34 @@ struct AppModelTests {
     }
 
     @Test
+    func userPreferencesDecodesEmptyObjectUsingDefaults() throws {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let decoded = try decoder.decode(UserPreferences.self, from: Data("{}".utf8))
+
+        #expect(decoded.theme == UserPreferences.default.theme)
+        #expect(decoded.fontChoice == UserPreferences.default.fontChoice)
+        #expect(decoded.fontSizeStep == UserPreferences.default.fontSizeStep)
+        #expect(decoded.schemaVersion == UserPreferences.currentSchemaVersion)
+    }
+
+    @Test
+    func userPreferencesEncodesUpdatedAtAsISO8601String() throws {
+        let preferences = UserPreferences(
+            theme: .forest,
+            fontChoice: .serif,
+            fontSizeStep: .large,
+            updatedAt: Date(timeIntervalSince1970: 1_704_067_200)
+        )
+
+        let data = try JSONEncoder().encode(preferences)
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        #expect(object["updatedAt"] is String)
+    }
+
+    @Test
     func preferencesStoreFallsBackToLegacyKeys() throws {
         let suiteName = "IceSniffMacTests.preferences.legacy.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -92,7 +120,7 @@ struct AppModelTests {
 
         #expect(model.authSession?.provider == .github)
         #expect(model.profileStatusMessage.contains("GitHub User"))
-        #expect(model.syncStatus != .idle)
+        #expect(model.syncStatus == .idle)
     }
 
     @Test
@@ -186,20 +214,12 @@ struct AppModelTests {
     }
 
     @Test
-    func supabaseConfigurationLoadsFromEnvironment() throws {
-        let configuration = try #require(
-            SupabaseConfiguration(
-                environment: [
-                    "ICESNIFF_SUPABASE_URL": "https://project.supabase.co",
-                    "ICESNIFF_SUPABASE_PUBLISHABLE_KEY": "publishable-key",
-                    "ICESNIFF_SUPABASE_PROFILES_TABLE": "profiles"
-                ]
-            )
-        )
+    @MainActor
+    func appModelDefaultsToCloudProfilesUnavailableMessage() {
+        let model = AppModel()
 
-        #expect(configuration.url.absoluteString == "https://project.supabase.co")
-        #expect(configuration.publishableKey == "publishable-key")
-        #expect(configuration.profilesTable == "profiles")
+        #expect(model.authSession == nil)
+        #expect(model.profileStatusMessage == CloudProfilesFeature.unavailableMessage)
     }
 
     @Test

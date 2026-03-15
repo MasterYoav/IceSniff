@@ -1,6 +1,6 @@
 # Supabase Auth Setup
 
-This document records the exact setup used to make cloud-backed `Profile` auth and preference sync work in the mac app.
+This document records the exact setup used to make `Profile` auth work in the mac app.
 
 It is written as an operator runbook, not as a design note.
 
@@ -11,18 +11,12 @@ The mac app can now:
 - sign in with GitHub
 - sign in with Google
 - store the authenticated session securely in Keychain
-- sync UI preferences through Supabase
-- restore those preferences on another Mac after sign-in
-
-Current synced preferences:
-
-- theme
-- font family
-- font size step
+- restore the authenticated session after relaunch
 
 ## What Is Not Included
 
 - Apple sign-in
+- cloud-backed preference sync in the public build
 - team/shared profiles
 - account management UI
 - production CI secrets wiring
@@ -35,13 +29,7 @@ The app expects these environment variables at runtime:
 
 - `ICESNIFF_SUPABASE_URL`
 - `ICESNIFF_SUPABASE_PUBLISHABLE_KEY`
-- `ICESNIFF_SUPABASE_PROFILES_TABLE`
-
-Recommended value for the table variable:
-
-```text
-profiles
-```
+- `ICESNIFF_SUPABASE_REDIRECT_URL` (optional)
 
 ## Add Environment Variables In Xcode
 
@@ -57,7 +45,7 @@ Example:
 ```text
 ICESNIFF_SUPABASE_URL = https://<project-ref>.supabase.co
 ICESNIFF_SUPABASE_PUBLISHABLE_KEY = sb_publishable_...
-ICESNIFF_SUPABASE_PROFILES_TABLE = profiles
+ICESNIFF_SUPABASE_REDIRECT_URL = icesniff://auth/callback
 ```
 
 Important:
@@ -65,43 +53,6 @@ Important:
 - type the variable names manually in Xcode
 - do not paste names copied from chat or formatted text
 - zero-width Unicode characters in the variable name will make the app treat the value as missing
-
-## Required Supabase Table
-
-Create this table in the Supabase SQL editor:
-
-```sql
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  preferences jsonb not null default '{}'::jsonb,
-  updated_at text not null default now()::text
-);
-```
-
-Then enable row-level security and add policies:
-
-```sql
-alter table public.profiles enable row level security;
-
-create policy "users can read own profile"
-on public.profiles
-for select
-to authenticated
-using (auth.uid() = id);
-
-create policy "users can insert own profile"
-on public.profiles
-for insert
-to authenticated
-with check (auth.uid() = id);
-
-create policy "users can update own profile"
-on public.profiles
-for update
-to authenticated
-using (auth.uid() = id)
-with check (auth.uid() = id);
-```
 
 ## Required Redirect Configuration
 
@@ -153,7 +104,7 @@ https://<project-ref>.supabase.co/auth/v1/callback
 
 When the env vars are missing:
 
-- the app falls back to mock auth/sync
+- sign-in is unavailable
 - `Profile Status` explains what is missing
 
 When the env vars are present:
@@ -161,6 +112,7 @@ When the env vars are present:
 - the app uses the real Supabase runtime
 - browser-based OAuth opens for Google or GitHub
 - sessions persist in Keychain
+- preferences still remain local to the current Mac
 
 ## Expected Login Flow
 
@@ -170,23 +122,11 @@ When the env vars are present:
 4. Complete auth in the browser
 5. The browser redirects back to `icesniff://auth/callback`
 6. The app receives the session
-7. The app pulls or creates the `profiles` row
+7. The app restores the signed-in identity on relaunch through the stored session
 
 ## Common Failure Modes
 
-### 1. App signs in instantly with a fake profile
-
-Cause:
-
-- the app is still using `MockAuthService`
-
-Most likely reasons:
-
-- missing Supabase env vars
-- wrong env var names
-- wrong Xcode scheme
-
-### 2. App says the publishable key is missing even though it was entered
+### 1. App says the publishable key is missing even though it was entered
 
 Cause:
 
@@ -196,7 +136,7 @@ Fix:
 
 - delete the variable row and type the env var name manually
 
-### 3. GitHub says the redirect URI is not associated with the application
+### 2. GitHub says the redirect URI is not associated with the application
 
 Cause:
 
@@ -206,7 +146,7 @@ Fix:
 
 - set the GitHub callback URL to `https://<project-ref>.supabase.co/auth/v1/callback`
 
-### 4. The app opens the browser but never comes back signed in
+### 3. The app opens the browser but never comes back signed in
 
 Cause:
 
@@ -230,9 +170,10 @@ Working on this branch:
 - GitHub sign-in
 - Google sign-in
 - avatar loading from provider metadata
-- local preference sync push/pull through Supabase
+- local-only preferences
 
 Not implemented on this branch:
 
 - Apple sign-in
+- cloud preference sync
 - CI secrets/configuration for hosted integration tests

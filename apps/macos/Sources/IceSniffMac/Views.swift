@@ -118,41 +118,40 @@ private func copyToPasteboard(_ value: String) {
 }
 
 func bundledAppIconImage() -> NSImage? {
-    if let iconBundleURL = Bundle.module.url(forResource: "icon", withExtension: "icon"),
-       let iconImage = iconImageFromBundle(at: iconBundleURL) {
-        return iconImage
-    }
-
-    guard let fallbackURL = Bundle.module.url(forResource: "icon-light", withExtension: "png") else {
+    guard let iconURL = Bundle.module.url(forResource: "icon-light", withExtension: "png"),
+          let image = NSImage(contentsOf: iconURL) else {
         return nil
     }
-    return NSImage(contentsOf: fallbackURL)
+
+    return paddedAppIconImage(from: image)
 }
 
-private func iconImageFromBundle(at iconBundleURL: URL) -> NSImage? {
-    let manifestURL = iconBundleURL.appendingPathComponent("icon.json")
-    guard
-        let manifestData = try? Data(contentsOf: manifestURL),
-        let manifestObject = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
-        let groups = manifestObject["groups"] as? [[String: Any]]
-    else {
-        return nil
-    }
+private func paddedAppIconImage(from image: NSImage, insetRatio: CGFloat = 0.16) -> NSImage? {
+    let canvasSize = NSSize(width: 1024, height: 1024)
+    let paddedImage = NSImage(size: canvasSize)
 
-    for group in groups {
-        guard let layers = group["layers"] as? [[String: Any]] else { continue }
-        for layer in layers {
-            guard let imageName = layer["image-name"] as? String else { continue }
-            let imageURL = iconBundleURL
-                .appendingPathComponent("Assets", isDirectory: true)
-                .appendingPathComponent(imageName)
-            if let image = NSImage(contentsOf: imageURL) {
-                return image
-            }
-        }
-    }
+    paddedImage.lockFocus()
+    NSColor.clear.set()
+    NSRect(origin: .zero, size: canvasSize).fill()
 
-    return nil
+    let inset = canvasSize.width * insetRatio
+    let destinationRect = NSRect(
+        x: inset,
+        y: inset,
+        width: canvasSize.width - (inset * 2),
+        height: canvasSize.height - (inset * 2)
+    )
+
+    image.draw(
+        in: destinationRect,
+        from: NSRect(origin: .zero, size: image.size),
+        operation: .sourceOver,
+        fraction: 1
+    )
+    paddedImage.unlockFocus()
+    paddedImage.size = NSSize(width: 512, height: 512)
+
+    return paddedImage
 }
 
 struct LiquidBackdrop: View {
@@ -1154,7 +1153,7 @@ struct ProfileSectionView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Profile")
                         .font(appFont(model.fontChoice, .title3, weight: .bold, scale: model.fontScale))
-                    Text("Account identity and preference sync")
+                    Text("Account identity and local preferences")
                         .font(appFont(model.fontChoice, .caption, scale: model.fontScale))
                         .foregroundStyle(.secondary)
                 }
@@ -1171,28 +1170,32 @@ struct ProfileSectionView: View {
 
     private var signedOutState: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Sign in to keep your IceSniff setup consistent across Macs.")
+            Text(model.cloudProfilesAvailable
+                ? "Sign in to identify yourself in IceSniff. Preferences are stored locally on this Mac only."
+                : "Sign-in is unavailable in this build. Preferences are stored locally on this Mac only.")
                 .font(appFont(model.fontChoice, .subheadline, scale: model.fontScale))
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 12) {
-                ForEach(AuthProvider.allCases) { provider in
-                    Button {
-                        model.signIn(with: provider)
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: provider.symbolName)
-                            Text("Continue with \(provider.title)")
+            if model.cloudProfilesAvailable {
+                HStack(spacing: 12) {
+                    ForEach(AuthProvider.allCases) { provider in
+                        Button {
+                            model.signIn(with: provider)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: provider.symbolName)
+                                Text("Continue with \(provider.title)")
+                            }
+                            .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(
+                                Capsule(style: .continuous)
+                                    .fill(Color.white.opacity(model.darkMode ? 0.08 : 0.44))
+                            )
                         }
-                        .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(Color.white.opacity(model.darkMode ? 0.08 : 0.44))
-                        )
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
 
@@ -1237,24 +1240,6 @@ struct ProfileSectionView: View {
                 statCard(title: "Theme", value: model.appTheme.title)
                 statCard(title: "Font", value: model.fontChoice.title)
                 statCard(title: "Size", value: String(describing: model.fontSizeStep.rawValue))
-            }
-
-            HStack(spacing: 12) {
-                Button("Sync Now") {
-                    model.syncProfileNow()
-                }
-                .buttonStyle(.plain)
-                .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(accentTint(model.appTheme).opacity(model.darkMode ? 0.22 : 0.18))
-                )
-
-                Text(model.syncStatus.title)
-                    .font(appFont(model.fontChoice, .caption, weight: .medium, scale: model.fontScale))
-                    .foregroundStyle(.secondary)
             }
 
             profileStatusCard
