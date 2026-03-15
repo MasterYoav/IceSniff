@@ -216,10 +216,31 @@ struct AppModelTests {
     @Test
     @MainActor
     func appModelDefaultsToCloudProfilesUnavailableMessage() {
-        let model = AppModel()
+        let keys = [
+            "ICESNIFF_SUPABASE_URL",
+            "ICESNIFF_SUPABASE_PUBLISHABLE_KEY",
+            "ICESNIFF_SUPABASE_REDIRECT_URL"
+        ]
+        let previousValues = keys.map { ($0, ProcessInfo.processInfo.environment[$0]) }
+        previousValues.forEach { key, _ in unsetenv(key) }
+        defer {
+            for (key, value) in previousValues {
+                if let value {
+                    setenv(key, value, 1)
+                } else {
+                    unsetenv(key)
+                }
+            }
+        }
+
+        let diagnosticMessage = "Sign-in unavailable. Missing config: ICESNIFF_SUPABASE_URL, ICESNIFF_SUPABASE_PUBLISHABLE_KEY"
+        let model = AppModel(
+            authService: DisabledAuthService(diagnosticMessage: diagnosticMessage),
+            profileSyncService: DisabledProfileSyncService()
+        )
 
         #expect(model.authSession == nil)
-        #expect(model.profileStatusMessage == CloudProfilesFeature.unavailableMessage)
+        #expect(model.profileStatusMessage == diagnosticMessage)
     }
 
     @Test
