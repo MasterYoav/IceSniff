@@ -14,12 +14,10 @@ The repository currently contains:
 
 IceSniff is released under the MIT License. See `LICENSE`.
 
-## Tech Stack
+[![Rust](https://img.shields.io/badge/Rust-%23000000.svg?e&logo=rust&logoColor=white)](#)
+[![Swift](https://img.shields.io/badge/Swift-F54A2A?logo=swift&logoColor=white)](#)
 
-- Rust for capture parsing, filtering, analysis services, and the CLI
-- SwiftUI for the macOS app
-- Supabase Swift for optional macOS sign-in
-- GitHub Actions for CI and release smoke checks
+
 
 ## What Works Today
 
