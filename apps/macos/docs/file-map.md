@@ -59,8 +59,22 @@ This file owns:
 - live-capture runtime resolution
 - CLI process launching and JSON/text bridging
 - app state for opened captures and live sessions
+- selected-packet context exported for the AI runtime
 
 If the app “does something” and it is not just view layout, it is probably rooted here.
+
+### `Sources/IceSniffMac/AIChatRuntime.swift`
+
+App-local AI runtime and provider integration layer.
+
+This file owns:
+
+- AI provider and model catalog
+- Keychain-backed API key storage
+- direct provider HTTP requests
+- local `codex` CLI execution
+- local `claude` CLI execution
+- provider-specific output sanitization and failure mapping
 
 ### `Sources/IceSniffMac/Views.swift`
 
@@ -71,6 +85,7 @@ This file owns:
 - sidebar layout
 - section containers
 - packet list and detail panes
+- AI panel and chat composer UI
 - settings UI
 - themes and font presentation helpers
 - reusable cards and controls

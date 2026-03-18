@@ -44,6 +44,12 @@ The mac app has three runtime layers:
    - saved capture export
    - live capture helper
 
+The app also includes an app-local AI runtime surface layered on top of those pieces:
+
+- SwiftUI hosts the chat panel and settings UI
+- `AppModel.swift` supplies capture and selected-packet context
+- `AIChatRuntime.swift` manages provider selection, Keychain-backed API keys, and local CLI-backed AI routes
+
 ## Runtime Model
 
 The app uses two bundled backend binaries:
@@ -82,6 +88,15 @@ It now includes:
 - remote avatar display
 - local-only preference storage in the public build
 
+The app also now includes a built-in right-side AI chat panel.
+
+That surface supports:
+
+- OpenAI, Anthropic, and Google API-key usage
+- local Codex usage for users with a working `codex` CLI session
+- local Claude Code usage for users with a working `claude` CLI session
+- selected-packet-aware questions when a packet is highlighted in the packet list
+
 The `Packets` section is the operational center for:
 
 - opening captures
@@ -109,6 +124,7 @@ If you are changing behavior:
 - UI-only changes should usually stay in `Views.swift`
 - app workflow/state changes should usually stay in `AppModel.swift`
 - app/window lifecycle changes should usually stay in `IceSniffMacApp.swift`
+- AI provider/runtime changes should usually stay in `AIChatRuntime.swift`
 - parsing, capture, and analysis changes should usually happen in `rust-engine`
 
 If you are adding a feature, prefer this order:
@@ -127,6 +143,7 @@ At the end of the current implementation phase, the mac app has:
 - bundled Rust analysis and capture helpers
 - Google and GitHub auth
 - local-only theme/font preference persistence
+- right-side AI chat with packet-aware context injection
 - GitHub Actions CI for CLI and mac app validation
 
 Open follow-up areas still worth improving later:
@@ -134,3 +151,4 @@ Open follow-up areas still worth improving later:
 - bundle-level macOS app icon metadata beyond runtime Dock icon assignment
 - production signing/notarization polish
 - additional profile fields beyond UI preferences
+- richer AI grounding beyond the single selected packet and current conversation

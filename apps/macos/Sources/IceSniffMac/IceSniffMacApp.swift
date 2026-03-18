@@ -39,6 +39,7 @@ struct WindowChromeConfigurator: NSViewRepresentable {
 @main
 struct IceSniffMacApp: App {
     @StateObject private var model = AppModel()
+    @StateObject private var chatModel = AIChatController()
     @State private var presentingFileImporter = false
 
     private func presentSavePanel(scope: CaptureSaveScope) {
@@ -87,7 +88,7 @@ struct IceSniffMacApp: App {
                 LiquidBackdrop(theme: model.appTheme)
                     .ignoresSafeArea()
 
-                HStack(spacing: 0) {
+                HStack(alignment: .top, spacing: 0) {
                     SidebarView(
                         model: model,
                         openCaptureAction: {
@@ -97,6 +98,7 @@ struct IceSniffMacApp: App {
 
                     DetailView(
                         model: model,
+                        chatModel: chatModel,
                         saveCaptureAction: {
                             presentSaveFlow()
                         },
@@ -104,9 +106,18 @@ struct IceSniffMacApp: App {
                             presentingFileImporter = true
                         }
                     )
+
+                    if !chatModel.panelCollapsed {
+                        AIChatPanelView(
+                            model: model,
+                            chatModel: chatModel
+                        )
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
                 }
             }
-            .frame(minWidth: 1240, minHeight: 820)
+            .frame(minWidth: 1380, minHeight: 820)
+            .animation(.spring(duration: 0.35, bounce: 0.22), value: chatModel.panelCollapsed)
             .preferredColorScheme(model.darkMode ? .dark : .light)
             .environment(\.font, appFont(model.fontChoice, .body))
             .toolbar {

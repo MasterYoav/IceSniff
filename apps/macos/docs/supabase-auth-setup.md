@@ -17,6 +17,7 @@ The mac app can now:
 
 - Apple sign-in
 - cloud-backed preference sync in the public build
+- AI account hosting or AI conversation sync through Supabase
 - team/shared profiles
 - account management UI
 - production CI secrets wiring
@@ -113,6 +114,7 @@ When the env vars are present:
 - browser-based OAuth opens for Google or GitHub
 - sessions persist in Keychain
 - preferences still remain local to the current Mac
+- AI provider settings remain separate from Supabase auth
 
 ## Expected Login Flow
 

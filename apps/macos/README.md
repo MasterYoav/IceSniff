@@ -1,4 +1,4 @@
-# IceSniff macOS Native App (Option 2)
+# IceSniff macOS Native App
 
 This is a native SwiftUI macOS app track (no embedded web app).
 It uses a mac-local Rust engine workspace under `rust-engine/` and talks to the bundled/local `icesniff-cli --json`.
@@ -10,7 +10,7 @@ For the full app-specific documentation set, start here:
 - `docs/runtime-and-backend.md`
 - `docs/features.md`
 - `docs/profile-cloud-sync-plan.md` (historical note; sync is currently disabled)
-- `docs/appwrite-integration-outline.md`
+- `docs/appwrite-integration-outline.md` (historical note)
 - `docs/supabase-auth-setup.md`
 
 Repository hygiene for this app track:
@@ -112,6 +112,7 @@ Current coverage includes:
 3. Save filtered vs whole capture scope selection logic.
 4. Engine info / capability payload compatibility.
 5. Privileged live-capture command generation and error mapping.
+6. AI chat runtime and local auth-disabled profile behavior through the app build.
 
 ## Supabase Auth Setup
 
@@ -138,6 +139,7 @@ App-side behavior:
 ## Current scope
 
 - Native frosted, collapsible sidebar
+- Collapsible right-side AI chat sidebar
 - Separate section views (Capture, Packets, Stats, Conversations, Streams, Transactions, Profile, Settings)
 - Uses the official light app icon in the sidebar
 - Uses the official bundled icon as the running Dock icon
@@ -147,3 +149,40 @@ App-side behavior:
 - Bundled analysis backend and bundled capture helper
 - Real Google and GitHub sign-in through Supabase auth
 - Local-only preferences in the public build
+- AI chat with:
+  - OpenAI API models
+  - Anthropic API models
+  - Google API models
+  - local Codex CLI integration for ChatGPT-backed Codex users
+  - local Claude Code integration for Claude users when the local CLI is healthy
+  - selected-packet context injection from the active packet pane
+
+## AI Chat Runtime
+
+The mac app includes a built-in AI chat surface on the right side of the window.
+
+Current behavior:
+
+1. The chat panel can be collapsed or expanded independently from the main left sidebar.
+2. The model picker remains inside the chat panel.
+3. Provider configuration lives in the main `Settings` section, not in the chat panel.
+4. When a packet is selected, the assistant receives:
+   - the selected packet index
+   - packet summary fields
+   - the full selected packet JSON
+
+Current provider modes:
+
+1. API-key providers stored in macOS Keychain:
+   - OpenAI
+   - Anthropic
+   - Google
+2. Local subscription-backed providers:
+   - Codex via the local `codex` CLI
+   - Claude Code via the local `claude` CLI
+
+Known limitations:
+
+1. The app does not expose shared hosted free models in the public build.
+2. ChatGPT Plus itself is not treated as direct API access; OpenAI API and local Codex are separate paths.
+3. Claude Code failures are intentionally collapsed to a plain-English setup error rather than showing raw CLI stack traces.

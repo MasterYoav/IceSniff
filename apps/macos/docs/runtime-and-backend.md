@@ -9,6 +9,8 @@ The app uses two backend binaries:
 - `icesniff-cli`
 - `icesniff-capture-helper`
 
+The mac app also has an app-local AI runtime that is not part of the Rust backend workspace.
+
 ## `icesniff-cli`
 
 `icesniff-cli` is the structured analysis backend.
@@ -112,6 +114,72 @@ The app should not rely on:
 - Wireshark being installed
 
 Those are development conveniences only, not release requirements.
+
+## AI Runtime
+
+The AI surface lives in the Swift app layer, not in `rust-engine`.
+
+The main implementation currently lives in:
+
+- `Sources/IceSniffMac/AIChatRuntime.swift`
+- `Sources/IceSniffMac/Views.swift`
+- `Sources/IceSniffMac/AppModel.swift`
+
+Responsibilities are split like this:
+
+1. `AIChatRuntime.swift`
+   - provider and model catalog
+   - Keychain-backed API key storage
+   - direct provider HTTP requests for OpenAI, Anthropic, and Google
+   - local CLI execution for Codex and Claude Code
+   - provider-specific failure sanitization
+2. `AppModel.swift`
+   - selected packet state
+   - selected packet JSON
+   - packet context exported to the AI runtime
+3. `Views.swift`
+   - AI sidebar UI
+   - model picker
+   - settings integration in the main Settings section
+   - chat composer and message rendering
+
+## AI Provider Modes
+
+The app currently supports two classes of AI providers:
+
+1. API-key providers
+   - OpenAI
+   - Anthropic
+   - Google
+2. Local subscription-backed providers
+   - Codex through the local `codex` CLI
+   - Claude Code through the local `claude` CLI
+
+API-key providers store credentials in macOS Keychain.
+
+Local subscription-backed providers do not store credentials in the app. They rely on the user already having the corresponding CLI installed and authenticated on the machine.
+
+## AI Context Model
+
+When no packet is selected, the assistant only has the conversation and its built-in network-analysis system prompt.
+
+When a packet is selected, the app injects:
+
+- the selected packet index
+- selected packet summary fields
+- the full selected packet JSON
+
+That makes the assistant packet-aware without requiring the user to paste the JSON manually.
+
+## AI Failure Surfaces
+
+The app should not expose raw CLI dumps for local AI providers.
+
+Current behavior:
+
+1. noisy Claude Code local-runtime failures are collapsed to a plain-English setup message
+2. missing local runtimes are reported as availability/setup issues
+3. provider HTTP failures are surfaced as concise request errors
 
 ## Profile Runtime
 

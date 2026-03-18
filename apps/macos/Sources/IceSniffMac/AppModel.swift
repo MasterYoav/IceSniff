@@ -1394,6 +1394,35 @@ final class AppModel: ObservableObject {
         cloudProfilesConfigured
     }
 
+    var selectedPacketContextForAI: String? {
+        guard let selectedPacketIndex,
+              let packet = packets.first(where: { $0.index == selectedPacketIndex }) else {
+            return nil
+        }
+
+        let normalizedJSON = selectedPacketJSON.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedJSON.isEmpty,
+              normalizedJSON != "Select a packet to inspect details.",
+              normalizedJSON != "No packets in current selection.",
+              !normalizedJSON.hasPrefix("Request failed:") else {
+            return nil
+        }
+
+        return """
+        The user currently has packet #\(packet.index) selected in IceSniff.
+
+        Packet summary:
+        - Timestamp: \(packet.timestamp)
+        - Source: \(packet.source)
+        - Destination: \(packet.destination)
+        - Protocol: \(packet.protocolName)
+        - Info: \(packet.info)
+
+        Full selected packet JSON:
+        \(normalizedJSON)
+        """
+    }
+
     init(
         preferencesStore: PreferencesStore = PreferencesStore(),
         authService: AuthService? = nil,

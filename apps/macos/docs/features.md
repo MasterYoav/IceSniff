@@ -119,6 +119,42 @@ Current font set:
 - Serif
 - Monospaced
 
+## AI Chat
+
+The mac app includes a collapsible AI chat panel on the right side of the window.
+
+Current AI chat capabilities:
+
+- ask general capture-analysis questions
+- ask questions about the currently selected packet
+- send on Enter
+- insert a newline with Shift+Enter or Option+Enter
+- keep provider configuration inside the main `Settings` screen
+
+When a packet is selected, the assistant receives:
+
+- the selected packet index
+- packet summary metadata from the packet list
+- the full selected packet JSON from the detail pane
+
+Current provider options:
+
+- `OpenAI · GPT-4.1` through an OpenAI API key
+- `Anthropic · Claude Sonnet 4` through an Anthropic API key
+- `Google · Gemini 2.5 Pro` through a Google API key
+- `OpenAI · Codex` through the local `codex` CLI session
+- `Anthropic · Claude Code` through the local `claude` CLI session
+
+Current AI settings live in:
+
+- the main `Settings` section
+
+Not currently supported:
+
+- hosted shared free AI models in the public build
+- direct ChatGPT subscription login as API access
+- cloud-synced AI conversations
+
 ## Profile Cloud Sync
 
 The `Profile` section is now live.
@@ -147,6 +183,7 @@ The mac app currently uses:
 
 - a native SwiftUI layout
 - a molded sidebar
+- a collapsible right-side AI rail
 - a section-title header integrated with the main content area
 - theme-aware gradients and frosted cards
 

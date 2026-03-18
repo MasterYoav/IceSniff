@@ -266,6 +266,84 @@ struct NativeTextField: NSViewRepresentable {
     }
 }
 
+struct ChatComposerTextView: NSViewRepresentable {
+    @Binding var text: String
+    var font: NSFont
+    let onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, onSubmit: onSubmit)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+
+        let textView = SendOnEnterTextView()
+        textView.delegate = context.coordinator
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isContinuousSpellCheckingEnabled = false
+        textView.backgroundColor = .clear
+        textView.drawsBackground = false
+        textView.font = font
+        textView.string = text
+        textView.textContainerInset = NSSize(width: 0, height: 8)
+        textView.sendHandler = onSubmit
+
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        guard let textView = nsView.documentView as? SendOnEnterTextView else { return }
+        if textView.string != text {
+            textView.string = text
+        }
+        textView.font = font
+        textView.sendHandler = onSubmit
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        @Binding var text: String
+        let onSubmit: () -> Void
+
+        init(text: Binding<String>, onSubmit: @escaping () -> Void) {
+            _text = text
+            self.onSubmit = onSubmit
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            text = textView.string
+        }
+    }
+}
+
+final class SendOnEnterTextView: NSTextView {
+    var sendHandler: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        let isReturn = event.keyCode == 36 || event.keyCode == 76
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let shouldInsertNewline = modifiers.contains(.shift) || modifiers.contains(.option)
+
+        if isReturn && !shouldInsertNewline {
+            sendHandler?()
+            return
+        }
+
+        super.keyDown(with: event)
+    }
+}
+
 struct SidebarView: View {
     @ObservedObject var model: AppModel
     let openCaptureAction: () -> Void
@@ -583,8 +661,428 @@ struct SidebarProfileButton: View {
     }
 }
 
+struct AIChatPanelView: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var chatModel: AIChatController
+
+    var body: some View {
+        expandedPanel
+        .frame(width: 360)
+        .frame(maxHeight: .infinity)
+        .background {
+            Rectangle()
+                .fill(.regularMaterial)
+                .overlay {
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(model.darkMode ? 0.08 : 0.38),
+                                    accentTint(model.appTheme).opacity(model.darkMode ? 0.08 : 0.04),
+                                    Color.clear
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+        }
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Color.white.opacity(model.darkMode ? 0.08 : 0.26))
+                .frame(width: 1)
+        }
+        .ignoresSafeArea(edges: .top)
+    }
+
+    private var expandedPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("AI Chat")
+                        .font(appFont(model.fontChoice, .title3, weight: .bold, scale: model.fontScale))
+                }
+
+                Spacer()
+
+                Button {
+                    withAnimation(.spring(duration: 0.35, bounce: 0.22)) {
+                        chatModel.togglePanel()
+                    }
+                } label: {
+                    Image(systemName: "sidebar.trailing")
+                }
+                .buttonStyle(.plain)
+                .help("Collapse chat")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+            }
+            .padding(.top, 12)
+
+            LiquidCard(theme: model.appTheme, cornerRadius: 20, padding: 14) {
+                HStack(spacing: 10) {
+                    Text("Model")
+                        .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
+
+                    Spacer(minLength: 0)
+
+                    Picker("AI Model", selection: $chatModel.selectedModelID) {
+                        ForEach(chatModel.availableModels) { model in
+                            Text(model.pickerLabel).tag(model.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .onChange(of: chatModel.selectedModelID) { newValue in
+                        chatModel.setSelectedModel(newValue)
+                    }
+                }
+            }
+
+            LiquidCard(theme: model.appTheme, cornerRadius: 22, padding: 0) {
+                VStack(spacing: 0) {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(chatModel.messages) { message in
+                                    AIChatBubble(
+                                        model: model,
+                                        message: message
+                                    )
+                                    .id(message.id)
+                                }
+
+                                if chatModel.isSending {
+                                    HStack(spacing: 8) {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                        Text("Waiting for \(chatModel.selectedModel.title)...")
+                                            .font(appFont(model.fontChoice, .caption, weight: .medium, scale: model.fontScale))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 10)
+                                }
+                            }
+                            .padding(12)
+                        }
+                        .onChange(of: chatModel.messages.count) { _ in
+                            if let lastMessageID = chatModel.messages.last?.id {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    proxy.scrollTo(lastMessageID, anchor: .bottom)
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle()
+                        .fill(Color.white.opacity(model.darkMode ? 0.06 : 0.18))
+                        .frame(height: 1)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(chatModel.statusMessage)
+                            .font(appFont(model.fontChoice, .caption, scale: model.fontScale))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        ChatComposerTextView(
+                            text: $chatModel.draftMessage,
+                            font: appNSFont(model.fontChoice, size: NSFont.systemFontSize, scale: model.fontScale),
+                            onSubmit: {
+                                chatModel.sendDraftMessage(packetContext: model.selectedPacketContextForAI)
+                            }
+                        )
+                            .frame(minHeight: 44, maxHeight: 60)
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(Color.white.opacity(model.darkMode ? 0.06 : 0.42))
+                            )
+
+                        HStack {
+                            Spacer()
+
+                            Button {
+                                chatModel.sendDraftMessage(packetContext: model.selectedPacketContextForAI)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "arrow.up.circle.fill")
+                                    Text(chatModel.isSending ? "Sending" : "Send")
+                                }
+                                .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(accentTint(model.appTheme))
+                                )
+                                .foregroundStyle(Color.white)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(chatModel.isSending)
+                        }
+                    }
+                    .padding(12)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 0)
+        .padding(.bottom, 12)
+        .ignoresSafeArea(edges: .top)
+    }
+}
+
+struct AIChatCollapsedLauncher: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var chatModel: AIChatController
+
+    var body: some View {
+        Button {
+            withAnimation(.spring(duration: 0.35, bounce: 0.22)) {
+                chatModel.togglePanel()
+            }
+        } label: {
+            VStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 18, weight: .bold))
+
+                Text("AI")
+                    .font(appFont(model.fontChoice, .caption, weight: .semibold, scale: model.fontScale))
+
+                Divider()
+                    .overlay(Color.white.opacity(0.2))
+
+                Image(systemName: chatModel.selectedModel.provider.symbolName)
+                    .font(.system(size: 13, weight: .semibold))
+
+                Text(chatModel.selectedModel.provider.title)
+                    .font(appFont(model.fontChoice, .caption2, weight: .semibold, scale: model.fontScale))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 14)
+            .frame(width: 58)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                accentTint(model.appTheme),
+                                accentTint(model.appTheme).opacity(0.72)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+            }
+            .shadow(color: Color.black.opacity(model.darkMode ? 0.28 : 0.12), radius: 18, x: 0, y: 10)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct AIChatSettingsCard: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var chatModel: AIChatController
+
+    var body: some View {
+        LiquidCard(theme: model.appTheme, cornerRadius: 20, padding: 14) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Provider Keys")
+                    .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
+
+                Text("API keys are stored in macOS Keychain. Saved values are never shown again in plain text here.")
+                    .font(appFont(model.fontChoice, .caption, scale: model.fontScale))
+                    .foregroundStyle(.secondary)
+
+                AIProviderKeyRow(
+                    model: model,
+                    provider: .openAI,
+                    keyDraft: $chatModel.openAIApiKeyDraft,
+                    isConfigured: chatModel.apiKeyConfigured(for: .openAI),
+                    saveAction: { chatModel.saveAPIKeyDraft(for: .openAI) },
+                    removeAction: { chatModel.removeAPIKey(for: .openAI) }
+                )
+
+                AIProviderKeyRow(
+                    model: model,
+                    provider: .anthropic,
+                    keyDraft: $chatModel.anthropicApiKeyDraft,
+                    isConfigured: chatModel.apiKeyConfigured(for: .anthropic),
+                    saveAction: { chatModel.saveAPIKeyDraft(for: .anthropic) },
+                    removeAction: { chatModel.removeAPIKey(for: .anthropic) }
+                )
+
+                AIProviderKeyRow(
+                    model: model,
+                    provider: .google,
+                    keyDraft: $chatModel.googleApiKeyDraft,
+                    isConfigured: chatModel.apiKeyConfigured(for: .google),
+                    saveAction: { chatModel.saveAPIKeyDraft(for: .google) },
+                    removeAction: { chatModel.removeAPIKey(for: .google) }
+                )
+
+                Text("Local Subscription Providers")
+                    .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
+                    .padding(.top, 4)
+
+                Text("These routes use the CLI already installed and signed in on this Mac. No API key is stored here.")
+                    .font(appFont(model.fontChoice, .caption, scale: model.fontScale))
+                    .foregroundStyle(.secondary)
+
+                AILocalRuntimeRow(
+                    model: model,
+                    provider: .codex,
+                    isAvailable: chatModel.localRuntimeConfigured(for: .codex),
+                    refreshAction: { chatModel.refreshLocalRuntimeAvailability() },
+                    helperText: "Uses the local `codex` session. Sign in once in Terminal with your ChatGPT-backed Codex account."
+                )
+
+                AILocalRuntimeRow(
+                    model: model,
+                    provider: .claudeCode,
+                    isAvailable: chatModel.localRuntimeConfigured(for: .claudeCode),
+                    refreshAction: { chatModel.refreshLocalRuntimeAvailability() },
+                    helperText: "Uses the local `claude` session. Sign in once in Terminal with your Claude Pro or Max account."
+                )
+            }
+        }
+    }
+}
+
+private struct AIProviderKeyRow: View {
+    @ObservedObject var model: AppModel
+    let provider: AIChatProvider
+    @Binding var keyDraft: String
+    let isConfigured: Bool
+    let saveAction: () -> Void
+    let removeAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(provider.title, systemImage: provider.symbolName)
+                    .font(appFont(model.fontChoice, .subheadline, weight: .semibold, scale: model.fontScale))
+
+                Spacer()
+
+                Text(isConfigured ? "Saved" : "Not Saved")
+                    .font(appFont(model.fontChoice, .caption, weight: .medium, scale: model.fontScale))
+                    .foregroundStyle(isConfigured ? .green : .secondary)
+            }
+
+            HStack(spacing: 8) {
+                SecureField("\(provider.title) API key", text: $keyDraft)
+                    .textFieldStyle(.roundedBorder)
+
+                Button("Save") {
+                    saveAction()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(accentTint(model.appTheme))
+
+                Button("Remove") {
+                    removeAction()
+                }
+                .buttonStyle(.bordered)
+                .disabled(!isConfigured)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(model.darkMode ? 0.06 : 0.34))
+        )
+    }
+}
+
+private struct AILocalRuntimeRow: View {
+    @ObservedObject var model: AppModel
+    let provider: AIChatProvider
+    let isAvailable: Bool
+    let refreshAction: () -> Void
+    let helperText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(provider.title, systemImage: provider.symbolName)
+                    .font(appFont(model.fontChoice, .subheadline, weight: .semibold, scale: model.fontScale))
+
+                Spacer()
+
+                Text(isAvailable ? "Installed" : "Missing")
+                    .font(appFont(model.fontChoice, .caption, weight: .medium, scale: model.fontScale))
+                    .foregroundStyle(isAvailable ? .green : .orange)
+            }
+
+            Text(helperText)
+                .font(appFont(model.fontChoice, .caption, scale: model.fontScale))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button("Refresh Availability") {
+                refreshAction()
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(model.darkMode ? 0.06 : 0.34))
+        )
+    }
+}
+
+private struct AIChatBubble: View {
+    @ObservedObject var model: AppModel
+    let message: AIChatMessage
+
+    private var isUser: Bool {
+        message.role == .user
+    }
+
+    var body: some View {
+        HStack {
+            if isUser {
+                Spacer(minLength: 26)
+            }
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(message.content)
+                    .font(appFont(model.fontChoice, .body, scale: model.fontScale))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(
+                        isUser
+                            ? accentTint(model.appTheme).opacity(model.darkMode ? 0.82 : 0.9)
+                            : Color.white.opacity(model.darkMode ? 0.08 : 0.5)
+                    )
+            )
+            .foregroundStyle(isUser ? Color.white : Color.primary)
+
+            if !isUser {
+                Spacer(minLength: 26)
+            }
+        }
+    }
+}
+
 struct DetailView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var chatModel: AIChatController
     let saveCaptureAction: () -> Void
     let openCaptureAction: () -> Void
 
@@ -619,6 +1117,13 @@ struct DetailView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Copy status message")
+
+                    if chatModel.panelCollapsed {
+                        AIChatHeaderLauncher(
+                            model: model,
+                            chatModel: chatModel
+                        )
+                    }
                 }
             }
 
@@ -642,7 +1147,7 @@ struct DetailView: View {
                     case .profile:
                         ProfileSectionView(model: model)
                     case .settings:
-                        SettingsSectionView(model: model)
+                        SettingsSectionView(model: model, chatModel: chatModel)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -655,6 +1160,34 @@ struct DetailView: View {
         .sheet(item: $model.packetInspectorState) { inspector in
             PacketInspectorWindow(inspector: inspector, darkMode: model.darkMode)
         }
+    }
+}
+
+private struct AIChatHeaderLauncher: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var chatModel: AIChatController
+
+    var body: some View {
+        Button {
+            withAnimation(.spring(duration: 0.35, bounce: 0.22)) {
+                chatModel.togglePanel()
+            }
+        } label: {
+            Image(systemName: "sparkles")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.white.opacity(model.darkMode ? 0.08 : 0.34))
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.white.opacity(model.darkMode ? 0.08 : 0.24), lineWidth: 1)
+                }
+        }
+        .buttonStyle(.plain)
+        .help("Show AI chat")
     }
 }
 
@@ -1337,128 +1870,129 @@ struct ProfileSectionView: View {
 
 struct SettingsSectionView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var chatModel: AIChatController
 
     var body: some View {
         LiquidCard(theme: model.appTheme, cornerRadius: 20, padding: 18) {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Settings")
-                    .font(appFont(model.fontChoice, .title3, weight: .bold))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Settings")
+                        .font(appFont(model.fontChoice, .title3, weight: .bold))
 
-                HStack(alignment: .top, spacing: 18) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Theme")
-                            .font(appFont(model.fontChoice, .headline, weight: .semibold))
+                    VStack(alignment: .leading, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Theme")
+                                .font(appFont(model.fontChoice, .headline, weight: .semibold))
 
-                        HStack(spacing: 10) {
-                            ForEach(AppTheme.allCases) { theme in
-                                VStack(spacing: 8) {
-                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: palette(for: theme).backgroundGradient,
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
+                            HStack(spacing: 10) {
+                                ForEach(AppTheme.allCases) { theme in
+                                    VStack(spacing: 8) {
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: palette(for: theme).backgroundGradient,
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                )
                                             )
-                                        )
-                                        .overlay(alignment: .bottomTrailing) {
-                                            Circle()
-                                                .fill(accentTint(theme))
-                                                .frame(width: 14, height: 14)
-                                                .padding(8)
-                                        }
-                                        .overlay {
-                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                                .stroke(theme == model.appTheme ? accentTint(model.appTheme) : Color.white.opacity(model.darkMode ? 0.12 : 0.3), lineWidth: theme == model.appTheme ? 2 : 1)
-                                        }
-                                        .frame(width: 104, height: 72)
-                                        .onTapGesture {
-                                            model.setTheme(theme)
-                                        }
+                                            .overlay(alignment: .bottomTrailing) {
+                                                Circle()
+                                                    .fill(accentTint(theme))
+                                                    .frame(width: 14, height: 14)
+                                                    .padding(8)
+                                            }
+                                            .overlay {
+                                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                                    .stroke(theme == model.appTheme ? accentTint(model.appTheme) : Color.white.opacity(model.darkMode ? 0.12 : 0.3), lineWidth: theme == model.appTheme ? 2 : 1)
+                                            }
+                                            .frame(width: 104, height: 72)
+                                            .onTapGesture {
+                                                model.setTheme(theme)
+                                            }
 
-                                    Text(theme.title)
-                                        .font(appFont(model.fontChoice, .caption, weight: .medium))
-                                        .foregroundStyle(.secondary)
+                                        Text(theme.title)
+                                            .font(appFont(model.fontChoice, .caption, weight: .medium))
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                             }
                         }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 8) {
+                                Text("Font")
+                                    .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 8) {
-                            Text("Font")
-                                .font(appFont(model.fontChoice, .headline, weight: .semibold, scale: model.fontScale))
+                                Spacer()
 
-                            Spacer()
-
-                            Button {
-                                model.decreaseFontSize()
-                            } label: {
-                                Image(systemName: "textformat.size.smaller")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .frame(width: 34, height: 30)
-                                    .background(
-                                        Capsule(style: .continuous)
-                                            .fill(Color.white.opacity(model.darkMode ? 0.08 : 0.42))
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                            .opacity(model.fontSizeStep == .extraSmall ? 0.45 : 1)
-                            .disabled(model.fontSizeStep == .extraSmall)
-
-                            Button {
-                                model.increaseFontSize()
-                            } label: {
-                                Image(systemName: "textformat.size.larger")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .frame(width: 34, height: 30)
-                                    .background(
-                                        Capsule(style: .continuous)
-                                            .fill(Color.white.opacity(model.darkMode ? 0.08 : 0.42))
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                            .opacity(model.fontSizeStep == .extraLarge ? 0.45 : 1)
-                            .disabled(model.fontSizeStep == .extraLarge)
-                        }
-
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(AppFontChoice.allCases) { choice in
                                 Button {
-                                    model.setFontChoice(choice)
+                                    model.decreaseFontSize()
                                 } label: {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(choice.title)
-                                                .font(appFont(choice, .headline, weight: .semibold))
-                                            Text("The quick brown fox jumps over the lazy packet.")
-                                                .font(appFont(choice, .caption))
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                        Spacer()
-                                        if choice == model.fontChoice {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .foregroundStyle(accentTint(model.appTheme))
-                                        }
-                                    }
-                                    .padding(12)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                            .fill(Color.white.opacity(model.darkMode ? 0.06 : 0.4))
-                                    )
+                                    Image(systemName: "textformat.size.smaller")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .frame(width: 34, height: 30)
+                                        .background(
+                                            Capsule(style: .continuous)
+                                                .fill(Color.white.opacity(model.darkMode ? 0.08 : 0.42))
+                                        )
                                 }
                                 .buttonStyle(.plain)
+                                .opacity(model.fontSizeStep == .extraSmall ? 0.45 : 1)
+                                .disabled(model.fontSizeStep == .extraSmall)
+
+                                Button {
+                                    model.increaseFontSize()
+                                } label: {
+                                    Image(systemName: "textformat.size.larger")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .frame(width: 34, height: 30)
+                                        .background(
+                                            Capsule(style: .continuous)
+                                                .fill(Color.white.opacity(model.darkMode ? 0.08 : 0.42))
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                                .opacity(model.fontSizeStep == .extraLarge ? 0.45 : 1)
+                                .disabled(model.fontSizeStep == .extraLarge)
+                            }
+
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(AppFontChoice.allCases) { choice in
+                                    Button {
+                                        model.setFontChoice(choice)
+                                    } label: {
+                                        HStack {
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(choice.title)
+                                                    .font(appFont(choice, .headline, weight: .semibold))
+                                                Text("The quick brown fox jumps over the lazy packet.")
+                                                    .font(appFont(choice, .caption))
+                                                    .foregroundStyle(.secondary)
+                                                    .lineLimit(1)
+                                            }
+                                            Spacer()
+                                            if choice == model.fontChoice {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .foregroundStyle(accentTint(model.appTheme))
+                                            }
+                                        }
+                                        .padding(12)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                                .fill(Color.white.opacity(model.darkMode ? 0.06 : 0.4))
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+
+                        AIChatSettingsCard(model: model, chatModel: chatModel)
                     }
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-
-
-                Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .scrollIndicators(.visible)
         }
     }
 }
