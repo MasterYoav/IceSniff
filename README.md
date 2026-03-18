@@ -4,13 +4,12 @@
 
 # IceSniff
 
-IceSniff is an open-source packet analysis project focused on a modern native UI, a scriptable CLI, and a shared Rust analysis engine.
+IceSniff is an open-source packet analysis project focused on a modern UI, integrated AI panel, a scriptable CLI, and a shared Rust analysis engine.
 
 The repository currently contains:
 
 - a Rust CLI in `apps/cli`
 - a native SwiftUI macOS app in `apps/macos`
-- a placeholder `apps/windows` track for future work
 
 IceSniff is released under the MIT License. See `LICENSE`.
 
