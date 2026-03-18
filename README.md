@@ -50,8 +50,9 @@ The native macOS app currently supports:
 - starting and stopping live capture
 - packet, stats, conversations, streams, and transactions views
 - packet detail inspection driven by the shared Rust backend
-- local UI preferences for theme and typography
+- local UI preferences for theme and font
 - optional Google and GitHub sign-in through Supabase
+- dedicated AI panel integrated with your favorite AI models
 
 ## What Is Not Done Yet
 
