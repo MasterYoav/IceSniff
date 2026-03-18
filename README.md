@@ -13,6 +13,7 @@ The repository currently contains:
 - a placeholder `apps/windows` track for future work
 
 IceSniff is released under the MIT License. See `LICENSE`.
+![CI](https://github.com/MasterYoav/MLOps_project/actions/workflows/ci.yml/badge.svg)
 
 [![Rust](https://img.shields.io/badge/Rust-%23000000.svg?e&logo=rust&logoColor=white)](#)
 [![Swift](https://img.shields.io/badge/Swift-F54A2A?logo=swift&logoColor=white)](#)
