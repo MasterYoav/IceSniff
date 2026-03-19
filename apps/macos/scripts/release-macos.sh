@@ -4,16 +4,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DERIVED_DATA="${ICESNIFF_DERIVED_DATA:-/tmp/icesniff-macos-derived-data}"
-BUILD_DIR="$DERIVED_DATA/Build/Products/Release"
 APP_NAME="${ICESNIFF_APP_NAME:-IceSniffMac}"
 ARCHIVE_DIR="${ICESNIFF_RELEASE_DIR:-$APP_ROOT/build/release}"
 APP_PATH="$ARCHIVE_DIR/$APP_NAME.app"
 ZIP_PATH="$ARCHIVE_DIR/$APP_NAME.zip"
 GPL_ARCHIVE_DIR="$ARCHIVE_DIR/gpl-compliance"
 ICON_SOURCE="$APP_ROOT/Sources/IceSniffMac/Resources/icon-light.png"
-EXECUTABLE_PATH="$BUILD_DIR/$APP_NAME"
 RESOURCE_BUNDLE_NAME="${APP_NAME}_${APP_NAME}.bundle"
-RESOURCE_BUNDLE_PATH="$BUILD_DIR/$RESOURCE_BUNDLE_NAME"
 BUNDLED_TSHARK_PATH="$APP_ROOT/Sources/IceSniffMac/Resources/BundledTShark/Wireshark.app"
 THIRD_PARTY_NOTICES_PATH="$APP_ROOT/Sources/IceSniffMac/Resources/ThirdPartyNotices"
 CONTENTS_PATH="$APP_PATH/Contents"
@@ -33,6 +30,9 @@ ENV_FILES=(
   "$APP_ROOT/.env.local"
   "$APP_ROOT/.env"
 )
+BUILD_DIR=""
+EXECUTABLE_PATH=""
+RESOURCE_BUNDLE_PATH=""
 
 env_file_value() {
   local key="$1"
@@ -164,6 +164,38 @@ prepare_gpl_compliance_bundle() {
   cp "$WIRESHARK_SOURCE_ARCHIVE" "$GPL_ARCHIVE_DIR/"
 }
 
+build_release_app() {
+  echo "==> Building macOS release app"
+  cd "$APP_ROOT"
+
+  if compgen -G "*.xcodeproj" > /dev/null || compgen -G "*.xcworkspace" > /dev/null; then
+    xcodebuild \
+      -scheme "$APP_NAME" \
+      -configuration Release \
+      -derivedDataPath "$DERIVED_DATA" \
+      -destination "platform=macOS" \
+      build
+
+    BUILD_DIR="$DERIVED_DATA/Build/Products/Release"
+  else
+    swift build -c release
+    BUILD_DIR="$(swift build -c release --show-bin-path)"
+  fi
+
+  EXECUTABLE_PATH="$BUILD_DIR/$APP_NAME"
+  RESOURCE_BUNDLE_PATH="$BUILD_DIR/$RESOURCE_BUNDLE_NAME"
+
+  if [[ ! -f "$EXECUTABLE_PATH" ]]; then
+    echo "Expected built executable not found at $EXECUTABLE_PATH" >&2
+    exit 1
+  fi
+
+  if [[ ! -d "$RESOURCE_BUNDLE_PATH" ]]; then
+    echo "Expected resource bundle not found at $RESOURCE_BUNDLE_PATH" >&2
+    exit 1
+  fi
+}
+
 "$SCRIPT_DIR/sync-bundled-cli.sh"
 zsh "$SCRIPT_DIR/sync-bundled-tshark.sh"
 
@@ -171,24 +203,7 @@ mkdir -p "$ARCHIVE_DIR"
 announce_loaded_env_files
 validate_release_configuration
 
-echo "==> Building macOS release app"
-cd "$APP_ROOT"
-xcodebuild \
-  -scheme "$APP_NAME" \
-  -configuration Release \
-  -derivedDataPath "$DERIVED_DATA" \
-  -destination "platform=macOS" \
-  build
-
-if [[ ! -f "$EXECUTABLE_PATH" ]]; then
-  echo "Expected built executable not found at $EXECUTABLE_PATH" >&2
-  exit 1
-fi
-
-if [[ ! -d "$RESOURCE_BUNDLE_PATH" ]]; then
-  echo "Expected resource bundle not found at $RESOURCE_BUNDLE_PATH" >&2
-  exit 1
-fi
+build_release_app
 
 echo "==> Assembling app bundle"
 assemble_app_bundle
