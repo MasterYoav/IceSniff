@@ -7,6 +7,7 @@ This document explains the current repository layout and the intended responsibi
 The repository is moving toward a thin-root shape.
 
 - `apps/cli`: first-class command-line interface with its own Rust workspace, fixtures, and tests
+- `apps/live`: local web app track with a browser UI and local process-backed Rust runtime bridge
 - `apps/macos`: native SwiftUI macOS app track with its own local Rust workspace under `apps/macos/rust-engine`, release scripts, tests, and runtime resources
 - `apps/windows`: intended future native Windows app track
 - `docs/`: architecture, process, roadmap, and continuity documentation
@@ -63,6 +64,7 @@ The first implemented slice is intentionally narrow:
 12. `apps/cli/crates/session-model` carries the report structures.
 13. `apps/cli/crates/output-formatters` renders text and JSON CLI output.
 14. `apps/macos` consumes its app-local Rust engine through CLI/helper boundaries and renders packet/detail/field/hex panes plus conversation/stream/transaction analysis tables, filtered export controls, and native live-capture controls.
+15. `apps/live` mirrors the macOS shell in the browser and talks to the same Rust analysis/capture backend through a local HTTP server that launches `icesniff-cli` and `icesniff-capture-helper`.
 
 This reflects the current transition state. The intended long-term shape is app-local ownership, not continued growth of root-level shared code by default.
 

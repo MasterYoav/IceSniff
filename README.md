@@ -10,6 +10,7 @@ The repository currently contains:
 
 - a Rust CLI in `apps/cli`
 - a native SwiftUI macOS app in `apps/macos`
+- a local web app in `apps/live`
 
 IceSniff is released under the MIT License. See `LICENSE`.
 
@@ -52,6 +53,16 @@ The native macOS app currently supports:
 - local UI preferences for theme and font
 - optional Google and GitHub sign-in through Supabase
 - a packet-aware AI sidebar with offline mode, API-backed providers, and local Codex / Claude Code routes
+
+### Live Web App
+
+The local web app currently supports:
+
+- the same packet/live-capture shell layout as the macOS app
+- opening local capture files through browser upload into a local temp workspace
+- starting and stopping live capture through the Rust capture helper
+- packet, stats, conversations, streams, and transactions views
+- analysis driven by the same `icesniff-cli` + `tshark` engine used by the macOS app
 
 ## What Is Not Done Yet
 
@@ -106,6 +117,15 @@ cd apps/macos
 swift run IceSniffMac
 ```
 
+### Live Web App
+
+```bash
+cd apps/live
+node server.mjs
+```
+
+Then open `http://127.0.0.1:4318`.
+
 ## Repository Guide
 
 - `CONTRIBUTING.md` for contribution rules and local workflows
@@ -113,6 +133,7 @@ swift run IceSniffMac
 - `docs/feature-parity-matrix.md` for cross-surface tracking
 - `docs/repo-map.md` for repository structure
 - `apps/macos/README.md` for macOS-specific setup
+- `apps/live/README.md` for the local web app
 
 ## Contributing
 

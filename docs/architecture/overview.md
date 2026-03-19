@@ -9,6 +9,7 @@ The repository is no longer optimized around one root-level shared engine feedin
 The intended long-term product surfaces are:
 
 - `apps/cli`
+- `apps/live`
 - `apps/macos`
 - `apps/windows`
 
