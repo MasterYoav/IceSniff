@@ -63,11 +63,12 @@ ICESNIFF_CLI_PROFILE=debug ./scripts/sync-bundled-cli.sh
 
 ## Release Packaging, Signing, and Notarization
 
-Use the release script to rebuild the bundled CLI, build the macOS app, sign it, and optionally notarize it:
+Use the release script to rebuild the bundled CLI, build the macOS app, create a release zip, create a macOS installer package, sign them, and optionally notarize them:
 
 ```bash
 cd /path/to/IceSniff/apps/macos
 ICESNIFF_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+ICESNIFF_INSTALLER_SIGNING_IDENTITY="Developer ID Installer: Your Name (TEAMID)" \
 ICESNIFF_NOTARY_KEYCHAIN_PROFILE="notary-profile" \
 ./scripts/release-macos.sh
 ```
@@ -79,22 +80,26 @@ Environment variables:
 1. `ICESNIFF_SIGNING_IDENTITY`
 Required for code signing. If omitted, the app is built but not signed.
 
-2. `ICESNIFF_NOTARY_KEYCHAIN_PROFILE`
-Optional. If provided, `xcrun notarytool submit --wait` runs and the resulting app is stapled.
+2. `ICESNIFF_INSTALLER_SIGNING_IDENTITY`
+Optional. Used to sign the generated `.pkg` installer. Use a `Developer ID Installer` identity for distributable installer packages.
 
-3. `ICESNIFF_RUST_WORKSPACE_ROOT`
+3. `ICESNIFF_NOTARY_KEYCHAIN_PROFILE`
+Optional. If provided, `xcrun notarytool submit --wait` runs for the app zip and, when the installer is signed, for the `.pkg` as well.
+
+4. `ICESNIFF_RUST_WORKSPACE_ROOT`
 Optional explicit local Rust workspace root. Defaults to `apps/macos/rust-engine`.
 
-4. `ICESNIFF_CARGO_TARGET_DIR`
+5. `ICESNIFF_CARGO_TARGET_DIR`
 Optional Cargo target directory for the bundled CLI build.
 
-5. `ICESNIFF_DERIVED_DATA`
+6. `ICESNIFF_DERIVED_DATA`
 Optional Xcode derived data directory for the release app build.
 
 Output:
 
 1. Release `.app` under `build/release` via the Xcode release build products path.
-2. Notarization zip at `build/release/IceSniffMac.zip`.
+2. Release zip at `build/release/IceSniffMac.zip`.
+3. Installer package at `build/release/IceSniffMac-installer.pkg`.
 
 ## Regression Tests
 

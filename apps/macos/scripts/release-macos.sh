@@ -8,7 +8,10 @@ APP_NAME="${ICESNIFF_APP_NAME:-IceSniffMac}"
 ARCHIVE_DIR="${ICESNIFF_RELEASE_DIR:-$APP_ROOT/build/release}"
 APP_PATH="$ARCHIVE_DIR/$APP_NAME.app"
 ZIP_PATH="$ARCHIVE_DIR/$APP_NAME.zip"
+PKG_PATH="$ARCHIVE_DIR/$APP_NAME-installer.pkg"
+COMPONENT_PKG_PATH="$ARCHIVE_DIR/$APP_NAME-component.pkg"
 GPL_ARCHIVE_DIR="$ARCHIVE_DIR/gpl-compliance"
+PKG_PAYLOAD_ROOT="$ARCHIVE_DIR/pkg-root"
 ICON_SOURCE="$APP_ROOT/Sources/IceSniffMac/Resources/icon-light.png"
 RESOURCE_BUNDLE_NAME="${APP_NAME}_${APP_NAME}.bundle"
 BUNDLED_TSHARK_PATH="$APP_ROOT/Sources/IceSniffMac/Resources/BundledTShark/Wireshark.app"
@@ -33,6 +36,7 @@ ENV_FILES=(
 BUILD_DIR=""
 EXECUTABLE_PATH=""
 RESOURCE_BUNDLE_PATH=""
+INSTALLER_SIGNING_IDENTITY="${ICESNIFF_INSTALLER_SIGNING_IDENTITY:-}"
 
 env_file_value() {
   local key="$1"
@@ -146,6 +150,26 @@ EOF
 }
 
 prepare_gpl_compliance_bundle() {
+  local source_archive_copy=""
+  local source_archive_basename=""
+  local fallback_source_archive=""
+
+  if [[ -n "$WIRESHARK_SOURCE_ARCHIVE" ]]; then
+    source_archive_basename="$(basename "$WIRESHARK_SOURCE_ARCHIVE")"
+    fallback_source_archive="$ARCHIVE_DIR/$source_archive_basename"
+    if [[ ! -f "$WIRESHARK_SOURCE_ARCHIVE" && -f "$fallback_source_archive" ]]; then
+      WIRESHARK_SOURCE_ARCHIVE="$fallback_source_archive"
+    fi
+  fi
+
+  if [[ -n "$WIRESHARK_SOURCE_ARCHIVE" && -f "$WIRESHARK_SOURCE_ARCHIVE" ]]; then
+    source_archive_copy="$ARCHIVE_DIR/$(basename "$WIRESHARK_SOURCE_ARCHIVE")"
+    if [[ "$WIRESHARK_SOURCE_ARCHIVE" == "$GPL_ARCHIVE_DIR/"* ]]; then
+      cp "$WIRESHARK_SOURCE_ARCHIVE" "$source_archive_copy"
+      WIRESHARK_SOURCE_ARCHIVE="$source_archive_copy"
+    fi
+  fi
+
   rm -rf "$GPL_ARCHIVE_DIR"
   mkdir -p "$GPL_ARCHIVE_DIR"
 
@@ -157,6 +181,9 @@ prepare_gpl_compliance_bundle() {
   if [[ -z "$WIRESHARK_SOURCE_ARCHIVE" || ! -f "$WIRESHARK_SOURCE_ARCHIVE" ]]; then
     echo "Bundled tshark requires the matching Wireshark source archive." >&2
     echo "Set ICESNIFF_WIRESHARK_SOURCE_ARCHIVE to the exact source tarball for the bundled Wireshark build." >&2
+    if [[ -n "$fallback_source_archive" ]]; then
+      echo "Tried fallback archive path: $fallback_source_archive" >&2
+    fi
     exit 1
   fi
 
@@ -164,11 +191,36 @@ prepare_gpl_compliance_bundle() {
   cp "$WIRESHARK_SOURCE_ARCHIVE" "$GPL_ARCHIVE_DIR/"
 }
 
+build_installer_pkg() {
+  echo "==> Creating macOS installer package"
+
+  rm -rf "$PKG_PAYLOAD_ROOT" "$COMPONENT_PKG_PATH" "$PKG_PATH"
+  mkdir -p "$PKG_PAYLOAD_ROOT/Applications"
+
+  ditto "$APP_PATH" "$PKG_PAYLOAD_ROOT/Applications/$APP_NAME.app"
+
+  pkgbuild \
+    --root "$PKG_PAYLOAD_ROOT" \
+    --identifier "$BUNDLE_IDENTIFIER.installer" \
+    --version "$APP_VERSION" \
+    --install-location "/" \
+    "$COMPONENT_PKG_PATH"
+
+  if [[ -n "$INSTALLER_SIGNING_IDENTITY" ]]; then
+    productbuild \
+      --package "$COMPONENT_PKG_PATH" \
+      --sign "$INSTALLER_SIGNING_IDENTITY" \
+      "$PKG_PATH"
+  else
+    mv "$COMPONENT_PKG_PATH" "$PKG_PATH"
+  fi
+}
+
 build_release_app() {
   echo "==> Building macOS release app"
   cd "$APP_ROOT"
 
-  if compgen -G "*.xcodeproj" > /dev/null || compgen -G "*.xcworkspace" > /dev/null; then
+  if [[ -n ./*.xcodeproj(N) || -n ./*.xcworkspace(N) ]]; then
     xcodebuild \
       -scheme "$APP_NAME" \
       -configuration Release \
@@ -237,6 +289,20 @@ if [[ -n "${ICESNIFF_NOTARY_KEYCHAIN_PROFILE:-}" ]]; then
   xcrun stapler staple "$APP_PATH"
 fi
 
+build_installer_pkg
+
+if [[ -n "${ICESNIFF_NOTARY_KEYCHAIN_PROFILE:-}" && -n "$INSTALLER_SIGNING_IDENTITY" ]]; then
+  echo "==> Submitting installer for notarization"
+  xcrun notarytool submit "$PKG_PATH" \
+    --keychain-profile "$ICESNIFF_NOTARY_KEYCHAIN_PROFILE" \
+    --wait
+  echo "==> Stapling installer notarization ticket"
+  xcrun stapler staple "$PKG_PATH"
+elif [[ -n "${ICESNIFF_NOTARY_KEYCHAIN_PROFILE:-}" ]]; then
+  echo "==> Skipping installer notarization because ICESNIFF_INSTALLER_SIGNING_IDENTITY is not set"
+fi
+
 echo "==> Release app ready at $APP_PATH"
 echo "==> Zip ready at $ZIP_PATH"
+echo "==> Installer ready at $PKG_PATH"
 echo "==> GPL compliance materials ready at $GPL_ARCHIVE_DIR"
