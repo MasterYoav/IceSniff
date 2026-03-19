@@ -7,7 +7,7 @@ use file_io::{capture_file_size, read_capture, write_pcap};
 use filter_engine::matches_filter;
 use parser_core::{
     capture_stats, conversations, decode_captured_packet, inspect_metadata, inspect_packet,
-    list_packets, stream_packet_indexes, streams, transactions,
+    list_packets, packet_indexes_for_filter, stream_packet_indexes, streams, transactions,
 };
 use session_model::{
     CaptureReport, CaptureStatsReport, ConversationReport, PacketDetailReport, PacketListReport,
@@ -144,6 +144,15 @@ fn select_packets(
     let Some(expression) = filter else {
         return Ok(capture.packets.clone());
     };
+
+    if let Some(selected_indexes) = packet_indexes_for_filter(capture, expression)? {
+        return Ok(capture
+            .packets
+            .iter()
+            .filter(|packet| selected_indexes.contains(&packet.summary.index))
+            .cloned()
+            .collect());
+    }
 
     capture
         .packets

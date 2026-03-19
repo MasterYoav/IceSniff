@@ -8,6 +8,11 @@ pub fn matches_filter(packet: &DecodedPacket, expression: &str) -> Result<bool, 
     eval_expr(packet, &expr, packet_field_values)
 }
 
+pub fn translate_filter_to_tshark_display_filter(expression: &str) -> Result<String, String> {
+    let expr = parse_expression(expression)?;
+    translate_expr_to_tshark(&expr)
+}
+
 pub fn matches_stream_filter(row: &StreamRow, expression: &str) -> Result<bool, String> {
     let expr = parse_expression(expression)?;
     eval_expr(row, &expr, stream_field_values)
@@ -262,6 +267,129 @@ fn eval_expr<T>(
                 || eval_expr(target, right, field_values_fn)?)
         }
     }
+}
+
+fn translate_expr_to_tshark(expr: &Expr) -> Result<String, String> {
+    match expr {
+        Expr::Clause {
+            key,
+            operator,
+            value,
+        } => translate_clause_to_tshark(key, operator, value),
+        Expr::Not(inner) => Ok(format!("!({})", translate_expr_to_tshark(inner)?)),
+        Expr::And(left, right) => Ok(format!(
+            "({}) && ({})",
+            translate_expr_to_tshark(left)?,
+            translate_expr_to_tshark(right)?
+        )),
+        Expr::Or(left, right) => Ok(format!(
+            "({}) || ({})",
+            translate_expr_to_tshark(left)?,
+            translate_expr_to_tshark(right)?
+        )),
+    }
+}
+
+fn translate_clause_to_tshark(
+    key: &str,
+    operator: &ClauseOperator,
+    value: &str,
+) -> Result<String, String> {
+    match key {
+        "protocol" | "service" => translate_protocol_clause(operator, value),
+        "port" => translate_alias_clause(
+            &["tcp.port", "udp.port", "sctp.port", "quic.port"],
+            operator,
+            value,
+        ),
+        "ip" => translate_alias_clause(&["ip.addr", "ipv6.addr"], operator, value),
+        "host" => translate_alias_clause(
+            &[
+                "ip.addr",
+                "ipv6.addr",
+                "dns.qry.name",
+                "http.host",
+                "tls.handshake.extensions_server_name",
+            ],
+            operator,
+            value,
+        ),
+        "endpoint" => Err("endpoint shorthand is not yet translatable to tshark".to_string()),
+        _ => translate_direct_clause(key, operator, value),
+    }
+}
+
+fn translate_protocol_clause(operator: &ClauseOperator, value: &str) -> Result<String, String> {
+    let protocol = sanitize_protocol_name(value);
+    if protocol.is_empty() {
+        return Err("protocol filter value cannot be empty".to_string());
+    }
+
+    match operator {
+        ClauseOperator::Eq => Ok(format!(
+            "(frame.protocols == {q} || frame.protocols contains {mid} || frame.protocols contains {prefix} || frame.protocols contains {suffix})",
+            q = tshark_literal(&protocol),
+            mid = tshark_literal(&format!(":{protocol}:")),
+            prefix = tshark_literal(&format!("{protocol}:")),
+            suffix = tshark_literal(&format!(":{protocol}"))
+        )),
+        ClauseOperator::Ne => Ok(format!(
+            "!({})",
+            translate_protocol_clause(&ClauseOperator::Eq, &protocol)?
+        )),
+        _ => Err("protocol filters only support '=' and '!=' for tshark-backed matching".to_string()),
+    }
+}
+
+fn translate_alias_clause(
+    fields: &[&str],
+    operator: &ClauseOperator,
+    value: &str,
+) -> Result<String, String> {
+    let comparisons = fields
+        .iter()
+        .map(|field| translate_direct_clause(field, operator, value))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(format!("({})", comparisons.join(" || ")))
+}
+
+fn translate_direct_clause(
+    key: &str,
+    operator: &ClauseOperator,
+    value: &str,
+) -> Result<String, String> {
+    let operator_text = match operator {
+        ClauseOperator::Eq => "==",
+        ClauseOperator::Ne => "!=",
+        ClauseOperator::Gt => ">",
+        ClauseOperator::Ge => ">=",
+        ClauseOperator::Lt => "<",
+        ClauseOperator::Le => "<=",
+        ClauseOperator::Contains => "contains",
+    };
+
+    if matches!(operator, ClauseOperator::Contains) {
+        return Ok(format!("{key} contains {}", tshark_literal(value)));
+    }
+
+    Ok(format!("{key} {operator_text} {}", tshark_literal(value)))
+}
+
+fn tshark_literal(value: &str) -> String {
+    if value.parse::<i64>().is_ok() {
+        value.to_string()
+    } else if matches!(value, "true" | "false") {
+        value.to_string()
+    } else {
+        format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+    }
+}
+
+fn sanitize_protocol_name(value: &str) -> String {
+    value.chars()
+        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
+        .collect::<String>()
+        .to_ascii_lowercase()
 }
 
 fn matches_clause<T>(
@@ -872,7 +1000,10 @@ fn packet_tls_handshake_length(packet: &DecodedPacket) -> Vec<i64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{matches_filter, matches_stream_filter, matches_transaction_filter};
+    use super::{
+        matches_filter, matches_stream_filter, matches_transaction_filter,
+        translate_filter_to_tshark_display_filter,
+    };
     use session_model::{
         ApplicationLayerSummary, DecodedPacket, DnsMessageSummary, EthernetFrameSummary, FieldNode,
         LinkLayerSummary, NetworkLayerSummary, PacketSummary, StreamRow, TimestampPrecision,
@@ -977,6 +1108,21 @@ mod tests {
             "tx.state=matched && tx.request.method=get && tx.response.status_code>=200 && tx.response.reason_phrase~=ok"
         )
         .unwrap());
+    }
+
+    #[test]
+    fn translates_protocol_and_port_filters_to_tshark() {
+        let filter = translate_filter_to_tshark_display_filter("protocol=quic && port=443").unwrap();
+        assert!(filter.contains("quic"));
+        assert!(filter.contains("tcp.port == 443"));
+        assert!(filter.contains("udp.port == 443"));
+    }
+
+    #[test]
+    fn translates_direct_field_contains_filters_to_tshark() {
+        let filter =
+            translate_filter_to_tshark_display_filter("dns.qry.name~=example.com").unwrap();
+        assert_eq!(filter, "dns.qry.name contains \"example.com\"");
     }
 
     #[test]

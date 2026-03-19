@@ -51,7 +51,7 @@ The native macOS app currently supports:
 - packet detail inspection driven by the shared Rust backend
 - local UI preferences for theme and font
 - optional Google and GitHub sign-in through Supabase
-- dedicated AI panel integrated with your favorite AI models
+- a packet-aware AI sidebar with offline mode, API-backed providers, and local Codex / Claude Code routes
 
 ## What Is Not Done Yet
 
@@ -63,6 +63,20 @@ IceSniff is still early-stage software. Important gaps include:
 - live capture depends on external system capture tooling and platform permissions
 - cloud-backed profile sync is disabled in the public macOS build
 - contributor-facing packaging and release workflows are still evolving
+
+## AI Security
+
+For the current macOS app:
+
+- API keys are stored in macOS Keychain, not app preferences
+- saved keys are not shown back in plain text after storage
+- hosted AI requests use an ephemeral networking session with caching disabled
+- Google AI credentials are sent in a request header instead of a URL query string
+- provider and local-runtime failures are sanitized before they appear in the UI
+
+Important limit:
+
+- if a user chooses a hosted provider and sends a prompt, the selected packet context for that request is sent to that provider
 
 ## Getting Started
 

@@ -132,6 +132,7 @@ Responsibilities are split like this:
    - Keychain-backed API key storage
    - direct provider HTTP requests for OpenAI, Anthropic, and Google
    - local CLI execution for Codex and Claude Code
+   - offline fallback assistant
    - provider-specific failure sanitization
 2. `AppModel.swift`
    - selected packet state
@@ -147,17 +148,44 @@ Responsibilities are split like this:
 
 The app currently supports two classes of AI providers:
 
-1. API-key providers
+1. offline provider
+   - built-in offline assistant
+2. API-key providers
    - OpenAI
    - Anthropic
    - Google
-2. Local subscription-backed providers
+3. Local subscription-backed providers
    - Codex through the local `codex` CLI
    - Claude Code through the local `claude` CLI
 
 API-key providers store credentials in macOS Keychain.
 
 Local subscription-backed providers do not store credentials in the app. They rely on the user already having the corresponding CLI installed and authenticated on the machine.
+
+The model picker is dynamic. It only shows the providers currently usable on that Mac:
+
+1. offline assistant is always available
+2. API providers appear when a saved key exists
+3. local subscription providers appear when the matching CLI is installed and available
+
+## AI Credential Security
+
+The current app implementation treats API keys as sensitive secrets.
+
+Current protections:
+
+1. API keys are stored in the macOS Keychain, not in `UserDefaults`, logs, or repository files.
+2. Keychain items are written with device-local accessibility, so they are intended to stay tied to the current Mac.
+3. Saved keys are not shown back in plain text inside the settings UI after storage.
+4. Hosted AI requests use an ephemeral `URLSession` with caching disabled and cookies disabled.
+5. Google AI requests send credentials in the `x-goog-api-key` header instead of a URL query string.
+6. Provider failures are sanitized before they reach the chat UI so raw response bodies, stack traces, and CLI dumps are not surfaced directly to the user.
+
+Important limits:
+
+1. No desktop app can promise perfect secrecy.
+2. If a user actively sends a prompt through a hosted AI provider, the selected packet context for that request leaves the Mac and is sent to that provider.
+3. Offline mode avoids hosted-provider transfer, but it is intentionally lower capability than hosted models.
 
 ## AI Context Model
 
@@ -179,7 +207,7 @@ Current behavior:
 
 1. noisy Claude Code local-runtime failures are collapsed to a plain-English setup message
 2. missing local runtimes are reported as availability/setup issues
-3. provider HTTP failures are surfaced as concise request errors
+3. provider HTTP failures are surfaced as sanitized request errors without echoing raw provider bodies
 
 ## Profile Runtime
 

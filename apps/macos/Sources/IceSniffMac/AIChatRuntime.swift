@@ -2,6 +2,7 @@ import Foundation
 import Security
 
 enum AIChatProvider: String, CaseIterable, Identifiable {
+    case offline
     case openAI
     case codex
     case anthropic
@@ -12,6 +13,8 @@ enum AIChatProvider: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .offline:
+            return "Offline"
         case .openAI:
             return "OpenAI API"
         case .codex:
@@ -27,6 +30,8 @@ enum AIChatProvider: String, CaseIterable, Identifiable {
 
     var symbolName: String {
         switch self {
+        case .offline:
+            return "bolt.shield"
         case .openAI:
             return "bubble.left.and.bubble.right"
         case .codex:
@@ -42,6 +47,8 @@ enum AIChatProvider: String, CaseIterable, Identifiable {
 
     var executableName: String? {
         switch self {
+        case .offline:
+            return nil
         case .codex:
             return "codex"
         case .claudeCode:
@@ -53,6 +60,8 @@ enum AIChatProvider: String, CaseIterable, Identifiable {
 
     var providerBrandTitle: String {
         switch self {
+        case .offline:
+            return "Offline"
         case .openAI, .codex:
             return "OpenAI"
         case .anthropic, .claudeCode:
@@ -64,6 +73,7 @@ enum AIChatProvider: String, CaseIterable, Identifiable {
 }
 
 enum AIChatModelAccess {
+    case offline
     case bringYourOwnKey
     case localSubscription
 }
@@ -81,6 +91,14 @@ struct AIChatModelPreset: Identifiable, Equatable {
     }
 
     static let catalog: [AIChatModelPreset] = [
+        AIChatModelPreset(
+            id: "offline-assistant",
+            provider: .offline,
+            title: "Offline Assistant",
+            subtitle: "Built-in local fallback for packet explanation and guidance",
+            remoteID: "offline",
+            access: .offline
+        ),
         AIChatModelPreset(
             id: "openai-gpt-4.1",
             provider: .openAI,
@@ -123,7 +141,8 @@ struct AIChatModelPreset: Identifiable, Equatable {
         )
     ]
 
-    static let `default` = catalog.first(where: { $0.id == "openai-gpt-4.1" }) ?? catalog[0]
+    static let offlineDefault = catalog.first(where: { $0.id == "offline-assistant" }) ?? catalog[0]
+    static let `default` = catalog.first(where: { $0.id == "openai-gpt-4.1" }) ?? offlineDefault
 }
 
 enum AIChatMessageRole: String {
@@ -168,6 +187,7 @@ enum AIChatServiceError: LocalizedError {
 final class AIKeychainStore: @unchecked Sendable {
     private enum Constants {
         static let service = "io.icesniff.macos.ai-chat"
+        static let useDataProtection = true
     }
 
     func saveAPIKey(_ value: String, for provider: AIChatProvider) throws {
@@ -175,16 +195,19 @@ final class AIKeychainStore: @unchecked Sendable {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Constants.service,
-            kSecAttrAccount: provider.rawValue
+            kSecAttrAccount: provider.rawValue,
+            kSecUseDataProtectionKeychain: Constants.useDataProtection
         ]
         let attributes: [CFString: Any] = [
-            kSecValueData: data
+            kSecValueData: data,
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
 
         let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if updateStatus == errSecItemNotFound {
             var addQuery = query
             addQuery[kSecValueData] = data
+            addQuery[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
             let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
             guard addStatus == errSecSuccess else {
                 throw AIChatServiceError.requestFailed("Unable to save \(provider.title) API key (\(addStatus)).")
@@ -200,6 +223,7 @@ final class AIKeychainStore: @unchecked Sendable {
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Constants.service,
             kSecAttrAccount: provider.rawValue,
+            kSecUseDataProtectionKeychain: Constants.useDataProtection,
             kSecReturnData: true,
             kSecMatchLimit: kSecMatchLimitOne
         ]
@@ -218,7 +242,8 @@ final class AIKeychainStore: @unchecked Sendable {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Constants.service,
-            kSecAttrAccount: provider.rawValue
+            kSecAttrAccount: provider.rawValue,
+            kSecUseDataProtectionKeychain: Constants.useDataProtection
         ]
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
@@ -303,9 +328,20 @@ struct AIChatService: Sendable {
     private let keychain: AIKeychainStore
     private let session: URLSession
 
-    init(keychain: AIKeychainStore = AIKeychainStore(), session: URLSession = .shared) {
+    init(keychain: AIKeychainStore = AIKeychainStore(), session: URLSession = AIChatService.makeSecureSession()) {
         self.keychain = keychain
         self.session = session
+    }
+
+    private static func makeSecureSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.waitsForConnectivity = false
+        return URLSession(configuration: configuration)
     }
 
     func sendConversation(
@@ -314,6 +350,8 @@ struct AIChatService: Sendable {
         systemPrompt: String
     ) async throws -> String {
         switch model.provider {
+        case .offline:
+            return try await sendOfflineConversation(messages: messages, systemPrompt: systemPrompt)
         case .openAI:
             return try await sendOpenAIConversation(messages: messages, model: model, systemPrompt: systemPrompt)
         case .codex:
@@ -329,6 +367,39 @@ struct AIChatService: Sendable {
 
     func isLocalRuntimeAvailable(for provider: AIChatProvider) -> Bool {
         resolvedExecutableURL(for: provider) != nil
+    }
+
+    private func sendOfflineConversation(
+        messages: [AIChatMessage],
+        systemPrompt: String
+    ) async throws -> String {
+        guard let latestUserMessage = messages.last(where: { $0.role == .user })?.content.nilIfEmpty else {
+            throw AIChatServiceError.emptyResponse(.offline)
+        }
+
+        let packetContext = extractPacketContext(from: systemPrompt)
+        let loweredPrompt = latestUserMessage.lowercased()
+
+        if let packetContext {
+            let summary = offlinePacketSummary(from: packetContext)
+            let guidance = offlinePacketGuidance(for: loweredPrompt, packetContext: packetContext)
+            return """
+            \(summary)
+
+            \(guidance)
+            """
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        if loweredPrompt.contains("filter") {
+            return "Offline mode can still help with filter ideas. Try protocol names like `http`, `dns`, `tls`, `quic`, `ospf`, or port-based filters like `443`, `udp and 53`, or `host=1.1.1.1`."
+        }
+
+        if loweredPrompt.contains("protocol") || loweredPrompt.contains("packet") || loweredPrompt.contains("capture") {
+            return "Offline mode does not call a hosted model, so it works without keys or CLI tools. I can still help summarize the selected packet, explain common filters, and guide your next inspection steps. Select a packet for more precise offline analysis."
+        }
+
+        return "Offline mode is active. Select a packet if you want a local summary of what IceSniff decoded, or ask about filters, protocols, endpoints, or what to inspect next."
     }
 
     private func sendOpenAIConversation(
@@ -355,6 +426,8 @@ struct AIChatService: Sendable {
 
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/responses")!)
         request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.timeoutInterval = 60
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
@@ -413,6 +486,8 @@ struct AIChatService: Sendable {
 
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
         request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.timeoutInterval = 60
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
@@ -461,7 +536,7 @@ struct AIChatService: Sendable {
         systemPrompt: String
     ) async throws -> String {
         let apiKey = try requireAPIKey(for: .google)
-        let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/\(model.remoteID):generateContent?key=\(apiKey)"
+        let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/\(model.remoteID):generateContent"
         let contents = messages.map { message in
             [
                 "role": message.role == .assistant ? "model" : "user",
@@ -473,7 +548,10 @@ struct AIChatService: Sendable {
 
         var request = URLRequest(url: URL(string: endpoint)!)
         request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        request.timeoutInterval = 60
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "systemInstruction": [
                 "parts": [[
@@ -556,6 +634,61 @@ struct AIChatService: Sendable {
         """
     }
 
+    private func extractPacketContext(from systemPrompt: String) -> String? {
+        let marker = "Current packet context from the app:"
+        guard let range = systemPrompt.range(of: marker) else {
+            return nil
+        }
+
+        return systemPrompt[range.upperBound...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
+    }
+
+    private func offlinePacketSummary(from packetContext: String) -> String {
+        let packetNumber = captureGroup(in: packetContext, pattern: #"packet #(\d+)"#) ?? "?"
+        let source = captureGroup(in: packetContext, pattern: #"- Source: (.+)"#) ?? "unknown source"
+        let destination = captureGroup(in: packetContext, pattern: #"- Destination: (.+)"#) ?? "unknown destination"
+        let protocolName = captureGroup(in: packetContext, pattern: #"- Protocol: (.+)"#) ?? "unknown protocol"
+        let info = captureGroup(in: packetContext, pattern: #"- Info: (.+)"#) ?? "no extra summary"
+
+        return "Selected packet #\(packetNumber) is \(protocolName.lowercased()) traffic from \(source) to \(destination). IceSniff’s current summary is: \(info)."
+    }
+
+    private func offlinePacketGuidance(for prompt: String, packetContext: String) -> String {
+        if prompt.contains("what") || prompt.contains("summary") || prompt.contains("tell me") {
+            return "Offline mode can summarize the selected packet but will not do full hosted-model reasoning. For deeper interpretation, switch to an available API or local subscription model."
+        }
+
+        if prompt.contains("suspicious") || prompt.contains("malicious") {
+            return "I cannot classify this packet as malicious offline from one packet alone. Check the endpoint pair, protocol behavior, repetition across the capture, and whether the payload or flags match the expected session."
+        }
+
+        if prompt.contains("filter") {
+            let protocolName = captureGroup(in: packetContext, pattern: #"- Protocol: (.+)"#)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased() ?? "packet"
+            let source = captureGroup(in: packetContext, pattern: #"- Source: (.+)"#) ?? ""
+            let destination = captureGroup(in: packetContext, pattern: #"- Destination: (.+)"#) ?? ""
+            return "Useful next filters: `\(protocolName)`, `host=\(source)`, `host=\(destination)`, or combine them with ports if the packet summary exposes one."
+        }
+
+        return "If you want more detail offline, inspect the right-side packet JSON tree and narrow the packet list with protocol, host, or port filters."
+    }
+
+    private func captureGroup(in text: String, pattern: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else {
+            return nil
+        }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, options: [], range: range),
+              match.numberOfRanges > 1,
+              let groupRange = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return String(text[groupRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func runLocalCommand(
         provider: AIChatProvider,
         commandURL: URL,
@@ -619,7 +752,7 @@ struct AIChatService: Sendable {
             do {
                 try process.run()
             } catch {
-                continuation.resume(throwing: AIChatServiceError.requestFailed("Failed to launch \(provider.title): \(error.localizedDescription)"))
+                continuation.resume(throwing: AIChatServiceError.requestFailed("Failed to launch \(provider.title) on this Mac. Verify the local runtime is installed and available, then try again."))
             }
         }
     }
@@ -653,7 +786,11 @@ struct AIChatService: Sendable {
             return "Codex is installed, but the local CLI is not authenticated for app use yet. Open Terminal, confirm Codex works there, then try again."
         }
 
-        return "\(provider.title) failed (exit \(exitCode)): \(rawFailure)"
+        if provider == .codex {
+            return "Codex is installed but could not complete this request. Confirm Codex works in Terminal on this Mac, then try again."
+        }
+
+        return "\(provider.title) could not complete this request on this Mac. Exit code \(exitCode)."
     }
 
     private func mergedRuntimeEnvironment() -> [String: String] {
@@ -679,11 +816,28 @@ struct AIChatService: Sendable {
         }
 
         guard (200..<300).contains(httpResponse.statusCode) else {
-            let body = String(data: data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .prefix(240) ?? ""
-            throw AIChatServiceError.requestFailed("\(provider.title) request failed (\(httpResponse.statusCode)): \(body)")
+            throw AIChatServiceError.requestFailed(sanitizedHTTPFailure(provider: provider, statusCode: httpResponse.statusCode, body: data))
         }
+    }
+
+    private func sanitizedHTTPFailure(provider: AIChatProvider, statusCode: Int, body: Data) -> String {
+        let text = String(data: body, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let normalized = text.lowercased()
+
+        if statusCode == 401 || statusCode == 403 || normalized.contains("invalid api key") || normalized.contains("authentication") || normalized.contains("unauthorized") {
+            return "\(provider.title) rejected the current credentials. Check the saved API key and try again."
+        }
+
+        if statusCode == 429 || normalized.contains("rate limit") || normalized.contains("quota") {
+            return "\(provider.title) is rate-limiting or quota-limiting this request right now. Wait and try again later."
+        }
+
+        if (500...599).contains(statusCode) {
+            return "\(provider.title) is having a server-side problem right now. Try again later."
+        }
+
+        return "\(provider.title) request failed with status \(statusCode). Check your provider configuration and try again."
     }
 }
 
@@ -691,16 +845,16 @@ struct AIChatService: Sendable {
 final class AIChatController: ObservableObject {
     @Published var panelCollapsed = true
     @Published var settingsVisible = false
-    @Published var selectedModelID = AIChatModelPreset.default.id
+    @Published var selectedModelID = AIChatModelPreset.offlineDefault.id
     @Published var draftMessage = ""
     @Published var messages: [AIChatMessage] = [
         AIChatMessage(
             role: .assistant,
-            content: "Ask about packets, protocols, filters, or what you are seeing in the capture. Add your OpenAI, Anthropic, or Google API key in settings to use live models."
+            content: "Ask about packets, protocols, filters, or what you are seeing in the capture. IceSniff can use its built-in offline assistant, your saved API keys, or local Codex and Claude Code sessions when available."
         )
     ]
     @Published private(set) var isSending = false
-    @Published private(set) var statusMessage = "Add your OpenAI, Anthropic, or Google API key in settings to use your own model account."
+    @Published private(set) var statusMessage = ""
     @Published var openAIApiKeyDraft = ""
     @Published var anthropicApiKeyDraft = ""
     @Published var googleApiKeyDraft = ""
@@ -721,14 +875,24 @@ final class AIChatController: ObservableObject {
         self.keychain = keychain
         self.service = service ?? AIChatService(keychain: keychain)
         refreshLocalRuntimeAvailability()
+        refreshAvailableModels()
     }
 
     var availableModels: [AIChatModelPreset] {
-        AIChatModelPreset.catalog
+        AIChatModelPreset.catalog.filter { preset in
+            switch preset.access {
+            case .offline:
+                return true
+            case .bringYourOwnKey:
+                return keychain.hasAPIKey(for: preset.provider)
+            case .localSubscription:
+                return localRuntimeAvailability[preset.provider] == true
+            }
+        }
     }
 
     var selectedModel: AIChatModelPreset {
-        availableModels.first(where: { $0.id == selectedModelID }) ?? .default
+        availableModels.first(where: { $0.id == selectedModelID }) ?? bestAvailableModel()
     }
 
     func togglePanel() {
@@ -740,8 +904,16 @@ final class AIChatController: ObservableObject {
     }
 
     func setSelectedModel(_ modelID: String) {
+        guard availableModels.contains(where: { $0.id == modelID }) else {
+            selectedModelID = bestAvailableModel().id
+            statusMessage = "That model is not currently available on this Mac."
+            return
+        }
+
         selectedModelID = modelID
         switch selectedModel.access {
+        case .offline:
+            statusMessage = "Using the built-in offline assistant."
         case .bringYourOwnKey:
             statusMessage = "Using \(selectedModel.title) via \(selectedModel.provider.title)."
         case .localSubscription:
@@ -760,11 +932,15 @@ final class AIChatController: ObservableObject {
     func refreshLocalRuntimeAvailability() {
         localRuntimeAvailability[.codex] = service.isLocalRuntimeAvailable(for: .codex)
         localRuntimeAvailability[.claudeCode] = service.isLocalRuntimeAvailable(for: .claudeCode)
+        refreshAvailableModels()
     }
 
     func saveAPIKeyDraft(for provider: AIChatProvider) {
         let value: String
         switch provider {
+        case .offline:
+            statusMessage = "The offline assistant does not use an API key."
+            return
         case .openAI:
             value = openAIApiKeyDraft
         case .anthropic:
@@ -785,6 +961,7 @@ final class AIChatController: ObservableObject {
         do {
             try keychain.saveAPIKey(trimmedValue, for: provider)
             clearDraft(for: provider)
+            refreshAvailableModels()
             statusMessage = "\(provider.title) API key saved to Keychain."
         } catch {
             statusMessage = error.localizedDescription
@@ -795,6 +972,7 @@ final class AIChatController: ObservableObject {
         do {
             try keychain.removeAPIKey(for: provider)
             clearDraft(for: provider)
+            refreshAvailableModels()
             statusMessage = "\(provider.title) API key removed."
         } catch {
             statusMessage = error.localizedDescription
@@ -857,6 +1035,8 @@ final class AIChatController: ObservableObject {
 
     private func clearDraft(for provider: AIChatProvider) {
         switch provider {
+        case .offline:
+            break
         case .openAI:
             openAIApiKeyDraft = ""
         case .anthropic:
@@ -872,6 +1052,43 @@ final class AIChatController: ObservableObject {
         reply
             .replacingOccurrences(of: "**", with: "")
             .replacingOccurrences(of: "__", with: "")
+    }
+
+    private func refreshAvailableModels() {
+        let bestModel = bestAvailableModel()
+        if !availableModels.contains(where: { $0.id == selectedModelID }) {
+            selectedModelID = bestModel.id
+        }
+
+        if statusMessage.isEmpty {
+            switch bestModel.access {
+            case .offline:
+                statusMessage = "Using the built-in offline assistant."
+            case .bringYourOwnKey:
+                statusMessage = "\(bestModel.title) is available with a saved API key."
+            case .localSubscription:
+                statusMessage = "\(bestModel.title) is available through a local signed-in CLI session."
+            }
+        }
+    }
+
+    private func bestAvailableModel() -> AIChatModelPreset {
+        let preferredIDs = [
+            "openai-gpt-4.1",
+            "codex-chatgpt",
+            "anthropic-claude-sonnet-4",
+            "claude-code-subscription",
+            "google-gemini-2.5-pro",
+            "offline-assistant"
+        ]
+
+        for id in preferredIDs {
+            if let model = availableModels.first(where: { $0.id == id }) {
+                return model
+            }
+        }
+
+        return AIChatModelPreset.offlineDefault
     }
 }
 

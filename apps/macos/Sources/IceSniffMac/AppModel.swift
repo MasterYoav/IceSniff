@@ -530,7 +530,7 @@ enum PrivilegedCaptureCommandBuilder {
         errorFile: String
     ) -> String {
         let shellCommand = ([executablePath] + arguments).map(shellQuoted).joined(separator: " ")
-        return "nohup \(shellCommand) >/dev/null 2>\(shellQuoted(errorFile)) < /dev/null & echo $! > \(shellQuoted(pidFile))"
+        return "umask 077; nohup \(shellCommand) >/dev/null 2>\(shellQuoted(errorFile)) < /dev/null & echo $! > \(shellQuoted(pidFile))"
     }
 
     static func stopCommand(pidFile: String, errorFile: String) -> String {
@@ -933,6 +933,10 @@ struct CliBridge {
         let fileManager = FileManager.default
         process.environment = mergedEnvironment(from: environment)
 
+        if let tsharkRuntime = resolveBundledTShark(fileManager: fileManager) ?? resolveSystemTShark(fileManager: fileManager) {
+            process.environment?["ICESNIFF_TSHARK_BIN"] = tsharkRuntime.path
+        }
+
         if let explicitCLI = environment["ICESNIFF_CLI_BIN"], fileManager.fileExists(atPath: explicitCLI) {
             process.executableURL = URL(fileURLWithPath: explicitCLI)
             process.arguments = args
@@ -1047,6 +1051,33 @@ struct CliBridge {
         }
 
         return nil
+    }
+
+    private static func resolveBundledTShark(fileManager: FileManager) -> URL? {
+        let candidateURLs: [URL?] = [
+            Bundle.main.resourceURL?.appendingPathComponent("BundledTShark/Wireshark.app/Contents/MacOS/tshark"),
+            Bundle.module.resourceURL?.appendingPathComponent("BundledTShark/Wireshark.app/Contents/MacOS/tshark")
+        ]
+
+        return candidateURLs
+            .compactMap { $0 }
+            .first(where: { fileManager.isExecutableFile(atPath: $0.path) })
+    }
+
+    private static func resolveSystemTShark(fileManager: FileManager) -> URL? {
+        let environment = ProcessInfo.processInfo.environment
+        if let explicit = environment["ICESNIFF_TSHARK_BIN"], fileManager.isExecutableFile(atPath: explicit) {
+            return URL(fileURLWithPath: explicit)
+        }
+
+        let candidates = [
+            "/Applications/Wireshark.app/Contents/MacOS/tshark",
+            "/opt/homebrew/bin/tshark",
+            "/usr/local/bin/tshark",
+            "/usr/bin/tshark"
+        ].map(URL.init(fileURLWithPath:))
+
+        return candidates.first(where: { fileManager.isExecutableFile(atPath: $0.path) })
     }
 
     private static func resolveCargoExecutable(environment: [String: String], fileManager: FileManager) -> URL? {
@@ -2046,6 +2077,17 @@ final class AppModel: ObservableObject {
         try? FileManager.default.removeItem(atPath: errorFile)
     }
 
+    private static func prepareRestrictedTemporaryFile(at path: String) throws {
+        let fileManager = FileManager.default
+        if !fileManager.fileExists(atPath: path) {
+            guard fileManager.createFile(atPath: path, contents: Data()) else {
+                throw CliBridgeError.commandFailed("Failed to prepare secure temporary runtime file.")
+            }
+        }
+
+        try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+    }
+
     private static func readTrimmedFile(at path: String) -> String? {
         guard FileManager.default.fileExists(atPath: path) else { return nil }
         return try? String(contentsOfFile: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2181,6 +2223,9 @@ final class AppModel: ObservableObject {
             .path
 
         try preparePrivilegedCaptureFile(at: outputPath)
+        try Self.prepareRestrictedTemporaryFile(at: pidFile)
+        try Self.prepareRestrictedTemporaryFile(at: errorFile)
+        try Self.prepareRestrictedTemporaryFile(at: stopFile)
 
         var arguments = runtime.startArguments(interface, outputPath)
         if runtime.backendKind == .iceSniffHelper {

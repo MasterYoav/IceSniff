@@ -92,10 +92,17 @@ The app also now includes a built-in right-side AI chat panel.
 
 That surface supports:
 
+- a built-in offline assistant with no external provider dependency
 - OpenAI, Anthropic, and Google API-key usage
 - local Codex usage for users with a working `codex` CLI session
 - local Claude Code usage for users with a working `claude` CLI session
 - selected-packet-aware questions when a packet is highlighted in the packet list
+
+The AI model selector is availability-driven rather than static:
+
+- offline mode is always present
+- API models appear when a matching key is stored
+- local subscription-backed models appear when their local CLI runtime is actually available
 
 The `Packets` section is the operational center for:
 
@@ -144,6 +151,7 @@ At the end of the current implementation phase, the mac app has:
 - Google and GitHub auth
 - local-only theme/font preference persistence
 - right-side AI chat with packet-aware context injection
+- Keychain-backed AI credential storage with sanitized provider error surfacing
 - GitHub Actions CI for CLI and mac app validation
 
 Open follow-up areas still worth improving later:

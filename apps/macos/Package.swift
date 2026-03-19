@@ -20,8 +20,10 @@ let package = Package(
                 .process("Resources/icon.icon"),
                 .process("Resources/icon-dark.png"),
                 .process("Resources/icon-light.png"),
+                .copy("Resources/BundledTShark"),
                 .copy("Resources/BundledCLI/icesniff-cli"),
-                .copy("Resources/BundledCLI/icesniff-capture-helper")
+                .copy("Resources/BundledCLI/icesniff-capture-helper"),
+                .copy("Resources/ThirdPartyNotices")
             ]
         ),
         .testTarget(

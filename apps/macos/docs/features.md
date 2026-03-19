@@ -127,6 +127,7 @@ Current AI chat capabilities:
 
 - ask general capture-analysis questions
 - ask questions about the currently selected packet
+- use a built-in offline assistant with no key or CLI dependency
 - send on Enter
 - insert a newline with Shift+Enter or Option+Enter
 - keep provider configuration inside the main `Settings` screen
@@ -139,11 +140,18 @@ When a packet is selected, the assistant receives:
 
 Current provider options:
 
+- `Offline · Offline Assistant` with no external account or key
 - `OpenAI · GPT-4.1` through an OpenAI API key
 - `Anthropic · Claude Sonnet 4` through an Anthropic API key
 - `Google · Gemini 2.5 Pro` through a Google API key
 - `OpenAI · Codex` through the local `codex` CLI session
 - `Anthropic · Claude Code` through the local `claude` CLI session
+
+The model list is dynamic:
+
+- offline mode is always available
+- API-backed models appear when the matching key is saved
+- local subscription-backed models appear when the matching CLI is installed and usable on the Mac
 
 Current AI settings live in:
 
@@ -154,6 +162,19 @@ Not currently supported:
 - hosted shared free AI models in the public build
 - direct ChatGPT subscription login as API access
 - cloud-synced AI conversations
+
+### AI Security
+
+Current user-facing security behavior:
+
+- API keys are stored in macOS Keychain
+- saved keys are not re-displayed in plain text
+- hosted AI requests use a non-shared ephemeral session with request caching disabled
+- provider failures are intentionally sanitized before they appear in the chat UI
+
+Important limit:
+
+- if the user chooses a hosted provider and sends a prompt, the selected packet context for that request is sent to that provider
 
 ## Profile Cloud Sync
 

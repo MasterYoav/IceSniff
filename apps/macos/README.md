@@ -186,3 +186,20 @@ Known limitations:
 1. The app does not expose shared hosted free models in the public build.
 2. ChatGPT Plus itself is not treated as direct API access; OpenAI API and local Codex are separate paths.
 3. Claude Code failures are intentionally collapsed to a plain-English setup error rather than showing raw CLI stack traces.
+
+## AI Security Notes
+
+Current AI credential and request handling:
+
+1. API keys are stored in the macOS Keychain, not in app preferences or plain text files.
+2. Keychain items are saved with device-local accessibility, so they are not intended to migrate to another Mac through restore flows.
+3. Saved keys are never shown back in plain text in the settings UI.
+4. AI API requests use an ephemeral URL session with caching disabled and cookies turned off.
+5. Google AI requests send the API key in a request header instead of placing it in the URL.
+6. Hosted providers only receive packet context when the user actively sends a chat request through that hosted model.
+7. Offline mode keeps the request on-device, and Codex / Claude Code use local CLI sessions already installed on the Mac.
+
+What this does not mean:
+
+1. IceSniff cannot guarantee perfect security or vendor-side privacy once you choose a hosted provider.
+2. If you send selected packet content to OpenAI, Anthropic, or Google, that packet context leaves the Mac for that request.

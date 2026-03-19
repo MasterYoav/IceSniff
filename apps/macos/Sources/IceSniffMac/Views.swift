@@ -952,8 +952,36 @@ private struct AIChatSettingsCard: View {
                     refreshAction: { chatModel.refreshLocalRuntimeAvailability() },
                     helperText: "Uses the local `claude` session. Sign in once in Terminal with your Claude Pro or Max account."
                 )
+
+                AIPrivacySecurityCard(model: model)
             }
         }
+    }
+}
+
+private struct AIPrivacySecurityCard: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Privacy & Security")
+                .font(appFont(model.fontChoice, .subheadline, weight: .semibold, scale: model.fontScale))
+
+            Text("Saved API keys stay in the macOS Keychain with device-local protection. IceSniff does not store them in app preferences, does not show them back in plain text, disables request caching for AI calls, and sends provider credentials in headers instead of URLs where possible.")
+                .font(appFont(model.fontChoice, .caption, scale: model.fontScale))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Packet content is only sent to a hosted provider when you actively use an API-backed model. Offline mode keeps analysis on-device, and Codex / Claude Code use your existing local CLI session on this Mac.")
+                .font(appFont(model.fontChoice, .caption, scale: model.fontScale))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(model.darkMode ? 0.06 : 0.34))
+        )
     }
 }
 

@@ -9,10 +9,13 @@ APP_NAME="${ICESNIFF_APP_NAME:-IceSniffMac}"
 ARCHIVE_DIR="${ICESNIFF_RELEASE_DIR:-$APP_ROOT/build/release}"
 APP_PATH="$ARCHIVE_DIR/$APP_NAME.app"
 ZIP_PATH="$ARCHIVE_DIR/$APP_NAME.zip"
+GPL_ARCHIVE_DIR="$ARCHIVE_DIR/gpl-compliance"
 ICON_SOURCE="$APP_ROOT/Sources/IceSniffMac/Resources/icon-light.png"
 EXECUTABLE_PATH="$BUILD_DIR/$APP_NAME"
 RESOURCE_BUNDLE_NAME="${APP_NAME}_${APP_NAME}.bundle"
 RESOURCE_BUNDLE_PATH="$BUILD_DIR/$RESOURCE_BUNDLE_NAME"
+BUNDLED_TSHARK_PATH="$APP_ROOT/Sources/IceSniffMac/Resources/BundledTShark/Wireshark.app"
+THIRD_PARTY_NOTICES_PATH="$APP_ROOT/Sources/IceSniffMac/Resources/ThirdPartyNotices"
 CONTENTS_PATH="$APP_PATH/Contents"
 MACOS_PATH="$CONTENTS_PATH/MacOS"
 RESOURCES_PATH="$CONTENTS_PATH/Resources"
@@ -22,6 +25,7 @@ BUNDLE_IDENTIFIER="${ICESNIFF_BUNDLE_IDENTIFIER:-io.icesniff.mac}"
 MINIMUM_SYSTEM_VERSION="${ICESNIFF_MINIMUM_SYSTEM_VERSION:-13.0}"
 APP_VERSION="${ICESNIFF_APP_VERSION:-1.0.0}"
 BUILD_VERSION="${ICESNIFF_BUILD_VERSION:-1}"
+WIRESHARK_SOURCE_ARCHIVE="${ICESNIFF_WIRESHARK_SOURCE_ARCHIVE:-}"
 ALLOW_MISSING_SUPABASE_CONFIG="${ICESNIFF_ALLOW_MISSING_SUPABASE_CONFIG:-0}"
 ENV_FILES=(
   "$APP_ROOT/.env.release.local"
@@ -141,7 +145,27 @@ EOF
   fi
 }
 
+prepare_gpl_compliance_bundle() {
+  rm -rf "$GPL_ARCHIVE_DIR"
+  mkdir -p "$GPL_ARCHIVE_DIR"
+
+  if [[ ! -d "$BUNDLED_TSHARK_PATH" ]]; then
+    echo "Expected bundled Wireshark runtime not found at $BUNDLED_TSHARK_PATH" >&2
+    exit 1
+  fi
+
+  if [[ -z "$WIRESHARK_SOURCE_ARCHIVE" || ! -f "$WIRESHARK_SOURCE_ARCHIVE" ]]; then
+    echo "Bundled tshark requires the matching Wireshark source archive." >&2
+    echo "Set ICESNIFF_WIRESHARK_SOURCE_ARCHIVE to the exact source tarball for the bundled Wireshark build." >&2
+    exit 1
+  fi
+
+  ditto "$THIRD_PARTY_NOTICES_PATH" "$GPL_ARCHIVE_DIR/notices"
+  cp "$WIRESHARK_SOURCE_ARCHIVE" "$GPL_ARCHIVE_DIR/"
+}
+
 "$SCRIPT_DIR/sync-bundled-cli.sh"
+zsh "$SCRIPT_DIR/sync-bundled-tshark.sh"
 
 mkdir -p "$ARCHIVE_DIR"
 announce_loaded_env_files
@@ -168,6 +192,9 @@ fi
 
 echo "==> Assembling app bundle"
 assemble_app_bundle
+
+echo "==> Preparing GPL compliance materials"
+prepare_gpl_compliance_bundle
 
 echo "==> Injecting bundle icon"
 zsh "$SCRIPT_DIR/inject-bundle-icon.sh" "$ICON_SOURCE" "$APP_PATH"
@@ -197,3 +224,4 @@ fi
 
 echo "==> Release app ready at $APP_PATH"
 echo "==> Zip ready at $ZIP_PATH"
+echo "==> GPL compliance materials ready at $GPL_ARCHIVE_DIR"

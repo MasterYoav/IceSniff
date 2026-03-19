@@ -6,3 +6,4 @@ node_modules/
 apps/macos/.swiftpm/
 apps/macos/.build/
 apps/macos/build/
+apps/macos/Sources/IceSniffMac/Resources/BundledTShark/Wireshark.app/

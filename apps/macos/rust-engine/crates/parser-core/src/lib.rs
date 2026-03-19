@@ -1,3 +1,5 @@
+mod tshark;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -15,15 +17,19 @@ pub fn list_packets(
     limit: Option<usize>,
     filter: Option<&str>,
 ) -> Result<PacketListReport, String> {
+    let tshark_metadata = tshark::packet_list_metadata(&capture.path)?;
     let decoded = filtered_packets(capture, filter)?;
     let total_packets = decoded.len() as u64;
     let packets = match limit {
         Some(limit) => decoded
             .into_iter()
             .take(limit)
-            .map(packet_list_row)
+            .map(|packet| packet_list_row(packet, tshark_metadata.as_ref()))
             .collect(),
-        None => decoded.into_iter().map(packet_list_row).collect(),
+        None => decoded
+            .into_iter()
+            .map(|packet| packet_list_row(packet, tshark_metadata.as_ref()))
+            .collect(),
     };
 
     Ok(PacketListReport {
@@ -47,7 +53,16 @@ pub fn inspect_packet(
     Ok(PacketDetailReport {
         path: capture.path.clone(),
         format: capture.format.clone(),
-        packet: decode_captured_packet(packet),
+        packet: match tshark::inspect_packet_with_tshark(&capture.path, packet) {
+            Ok(decoded) => decoded,
+            Err(error) => {
+                let mut decoded = decode_captured_packet(packet);
+                decoded
+                    .notes
+                    .push(format!("Native decode fallback: {error}"));
+                decoded
+            }
+        },
     })
 }
 
@@ -295,6 +310,13 @@ pub fn decode_captured_packet(packet: &CapturedPacket) -> DecodedPacket {
     decode_packet(packet.summary.clone(), &packet.raw_bytes, packet.linktype)
 }
 
+pub fn packet_indexes_for_filter(
+    capture: &LoadedCapture,
+    filter: &str,
+) -> Result<Option<BTreeSet<u64>>, String> {
+    tshark::filter_packet_indexes(&capture.path, filter)
+}
+
 pub fn inspect_metadata(
     path: &Path,
     format: CaptureFormat,
@@ -345,12 +367,25 @@ fn filtered_packets(
     capture: &LoadedCapture,
     filter: Option<&str>,
 ) -> Result<Vec<DecodedPacket>, String> {
+    let tshark_indexes = match filter {
+        Some(expression) => tshark::filter_packet_indexes(&capture.path, expression)?,
+        None => None,
+    };
+
     let mut packets = Vec::new();
     for packet in &capture.packets {
-        let decoded = decode_captured_packet(packet);
-        if let Some(filter) = filter {
-            if !matches_filter(&decoded, filter)? {
+        if let Some(indexes) = &tshark_indexes {
+            if !indexes.contains(&packet.summary.index) {
                 continue;
+            }
+        }
+
+        let decoded = decode_captured_packet(packet);
+        if tshark_indexes.is_none() {
+            if let Some(filter) = filter {
+                if !matches_filter(&decoded, filter)? {
+                    continue;
+                }
             }
         }
         packets.push(decoded);
@@ -358,10 +393,22 @@ fn filtered_packets(
     Ok(packets)
 }
 
-fn packet_list_row(packet: DecodedPacket) -> PacketListRow {
-    let (source, destination) = packet_addresses(&packet);
-    let protocol = packet_protocol(&packet);
-    let info = packet_info(&packet);
+fn packet_list_row(
+    packet: DecodedPacket,
+    tshark_metadata: Option<&BTreeMap<u64, tshark::PacketListMetadata>>,
+) -> PacketListRow {
+    let metadata = tshark_metadata.and_then(|rows| rows.get(&packet.summary.index));
+    let (source, destination) = metadata
+        .map(|row| (row.source.clone(), row.destination.clone()))
+        .unwrap_or_else(|| packet_addresses(&packet));
+    let protocol = metadata
+        .map(packet_list_protocol)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| packet_protocol(&packet));
+    let info = metadata
+        .map(|row| row.info.clone())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| packet_info(&packet));
 
     PacketListRow {
         summary: packet.summary,
@@ -370,6 +417,52 @@ fn packet_list_row(packet: DecodedPacket) -> PacketListRow {
         protocol,
         info,
     }
+}
+
+fn packet_list_protocol(row: &tshark::PacketListMetadata) -> String {
+    let column_protocol = row.protocol.trim().to_ascii_lowercase();
+    if !column_protocol.is_empty() && !is_generic_protocol_label(&column_protocol) {
+        return column_protocol;
+    }
+
+    preferred_protocol_label(&row.protocols)
+        .filter(|value| !is_generic_protocol_label(value))
+        .unwrap_or(column_protocol)
+}
+
+fn preferred_protocol_label(protocols: &[String]) -> Option<String> {
+    let ignored = [
+        "frame",
+        "eth",
+        "ethertype",
+        "sll",
+        "sll2",
+        "radiotap",
+        "wlan_radio",
+        "wlan",
+        "data",
+        "ip",
+        "ipv6",
+        "icmp",
+        "icmpv6",
+        "tcp",
+        "udp",
+        "gre",
+    ];
+
+    protocols
+        .iter()
+        .rev()
+        .find(|protocol| !ignored.contains(&protocol.as_str()))
+        .cloned()
+        .or_else(|| protocols.last().cloned())
+}
+
+fn is_generic_protocol_label(value: &str) -> bool {
+    matches!(
+        value,
+        "" | "unknown" | "data" | "ethertype" | "ipv4" | "ipv6" | "ip" | "udp" | "tcp"
+    )
 }
 
 fn packet_addresses(packet: &DecodedPacket) -> (String, String) {
