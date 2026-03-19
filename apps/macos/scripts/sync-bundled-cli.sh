@@ -40,10 +40,12 @@ DEST_DIR="$APP_ROOT/Sources/IceSniffMac/Resources/BundledCLI"
 CLI_DEST_PATH="$DEST_DIR/icesniff-cli"
 HELPER_DEST_PATH="$DEST_DIR/icesniff-capture-helper"
 mkdir -p "$DEST_DIR"
+rm -f "$CLI_DEST_PATH" "$HELPER_DEST_PATH"
 cp "$CLI_PATH" "$CLI_DEST_PATH"
 chmod +x "$CLI_DEST_PATH"
 cp "$HELPER_PATH" "$HELPER_DEST_PATH"
 chmod +x "$HELPER_DEST_PATH"
+xattr -c "$CLI_DEST_PATH" "$HELPER_DEST_PATH" 2>/dev/null || true
 
 echo "==> Bundled CLI refreshed at $CLI_DEST_PATH"
 echo "==> Bundled capture helper refreshed at $HELPER_DEST_PATH"
