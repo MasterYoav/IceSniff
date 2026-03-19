@@ -58,10 +58,12 @@ The native macOS app currently supports:
 
 The local web app currently supports:
 
-- the same packet/live-capture shell layout as the macOS app
+- a browser-first packet/live-capture shell with a collapsible overlay section rail and a toggleable AI side panel
 - opening local capture files through browser upload into a local temp workspace
-- starting and stopping live capture through the Rust capture helper
+- starting and stopping live capture through the Rust capture helper with an in-app toggle control
+- saving the current capture from the packets view
 - packet, stats, conversations, streams, and transactions views
+- browser-local UI preferences for theme, font, and panel-background density
 - analysis driven by the same `icesniff-cli` + `tshark` engine used by the macOS app
 
 ## What Is Not Done Yet

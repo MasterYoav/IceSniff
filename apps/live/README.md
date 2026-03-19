@@ -45,9 +45,22 @@ For tshark:
 
 ## Current Scope
 
-- browser UI styled to match the macOS app shell
+- browser UI styled as a local web shell with:
+  - a collapsible overlay section rail
+  - a toggleable AI side panel
+  - browser-local theme, font, and panel-background preferences
 - packet/live-capture surface
 - stats, conversations, streams, and transactions sections
 - upload existing capture files into a local temporary workspace
-- start and stop live capture through the Rust capture helper
+- start and stop live capture through the Rust capture helper with a packets-view toggle control
+- save/export the current capture from the packets view
 - analysis powered by the same Rust+tshark engine used by the macOS app
+
+## UI Notes
+
+- the section rail opens as an overlay inside the main workspace instead of resizing the primary content area
+- the section rail auto-closes after a section is selected
+- the main header owns the view title, the section-rail toggle, the shared open-capture action, and the AI-panel toggle
+- packets view keeps the filter and capture utilities in the top row and uses a toggle control for starting or stopping live capture
+- packets view saves the current capture from the capture panel, while file import stays in the shared header action
+- theme, font, panel-background density, and panel visibility preferences are stored in browser-local state

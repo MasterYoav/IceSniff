@@ -633,6 +633,8 @@ async function serveStatic(response, pathname) {
   let targetPath;
   if (pathname === "/") {
     targetPath = path.join(PUBLIC_ROOT, "index.html");
+  } else if (pathname.startsWith("/live-media/")) {
+    targetPath = path.join(PUBLIC_ROOT, pathname.replace("/live-media/", "media/"));
   } else if (pathname.startsWith("/media/")) {
     targetPath = path.join(REPO_ROOT, pathname);
   } else {
@@ -640,7 +642,10 @@ async function serveStatic(response, pathname) {
   }
 
   const normalized = path.normalize(targetPath);
-  if (!normalized.startsWith(PUBLIC_ROOT) && !normalized.startsWith(path.join(REPO_ROOT, "media"))) {
+  if (
+    !normalized.startsWith(PUBLIC_ROOT) &&
+    !normalized.startsWith(path.join(REPO_ROOT, "media"))
+  ) {
     sendText(response, 403, "Forbidden");
     return;
   }
