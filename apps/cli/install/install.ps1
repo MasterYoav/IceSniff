@@ -57,16 +57,22 @@ function Ensure-UserPathContains([string]$PathEntry) {
     $env:Path = "$PathEntry;$env:Path"
 }
 
-function Write-Launcher([string]$LauncherPath, [string]$TargetDir) {
+function Write-Launcher([string]$LauncherPath, [string]$TargetDir, [string]$EntryPoint) {
     $targetDir = $TargetDir.Replace('/', '\')
+    $installRootEscaped = $installRoot.Replace('/', '\')
+    $binRootEscaped = $binRoot.Replace('/', '\')
+    $programRootEscaped = $programRoot.Replace('/', '\')
     $launcher = @"
 @echo off
 setlocal
 set "TARGET_DIR=$targetDir"
 set "ICESNIFF_RUNTIME_ROOT=%TARGET_DIR%\runtime"
+set "ICESNIFF_INSTALL_ROOT=$installRootEscaped"
+set "ICESNIFF_INSTALL_BIN=$binRootEscaped"
+set "ICESNIFF_PROGRAM_ROOT=$programRootEscaped"
 if exist "%ICESNIFF_RUNTIME_ROOT%\wireshark\bin" set "PATH=%ICESNIFF_RUNTIME_ROOT%\wireshark\bin;%PATH%"
 if exist "%ICESNIFF_RUNTIME_ROOT%\wireshark" set "PATH=%ICESNIFF_RUNTIME_ROOT%\wireshark;%PATH%"
-"%TARGET_DIR%\libexec\icesniff-cli.exe" %*
+"%TARGET_DIR%\libexec\icesniff-cli.exe" $EntryPoint %*
 "@
 
     Set-Content -Path $LauncherPath -Value $launcher -NoNewline
@@ -114,8 +120,8 @@ try {
         Remove-Item -Recurse -Force $expandedRoot.FullName
     }
 
-    Write-Launcher (Join-Path $binRoot "icesniff-cli.cmd") $targetDir
-    Write-Launcher (Join-Path $binRoot "icesniff.cmd") $targetDir
+    Write-Launcher (Join-Path $binRoot "icesniff-cli.cmd") $targetDir ""
+    Write-Launcher (Join-Path $binRoot "icesniff.cmd") $targetDir "launcher"
     Ensure-UserPathContains $binRoot
 } finally {
     if (Test-Path $tempDir) {
@@ -126,5 +132,5 @@ try {
 Write-Host ""
 Write-Host "Installed IceSniff CLI $tag to $targetDir"
 Write-Host "Launcher: $binRoot\icesniff-cli.cmd"
-Write-Host "Alias: $binRoot\icesniff.cmd"
-Write-Host "The command is available in new terminal windows as: icesniff-cli"
+Write-Host "Menu: $binRoot\icesniff.cmd"
+Write-Host "The commands are available in new terminal windows as: icesniff-cli and icesniff"

@@ -228,12 +228,7 @@ function resolveHelperCommand() {
       cwd: MAC_WORKSPACE_ROOT
     };
   }
-
-  return {
-    command: resolveCargoExecutable(),
-    preArgs: ["run", "-q", "-p", "icesniff-capture-helper", "--"],
-    cwd: MAC_WORKSPACE_ROOT
-  };
+  return null;
 }
 
 function cliEnvironment() {
@@ -345,14 +340,22 @@ async function runCLIText(args) {
 
 async function listCaptureInterfaces() {
   const runtime = resolveHelperCommand();
-  const { stdout } = await runCommand(
-    runtime.command,
-    [...runtime.preArgs, "list-interfaces"],
-    {
-      cwd: runtime.cwd,
-      env: cliEnvironment()
-    }
-  );
+  if (runtime) {
+    const { stdout } = await runCommand(
+      runtime.command,
+      [...runtime.preArgs, "list-interfaces"],
+      {
+        cwd: runtime.cwd,
+        env: cliEnvironment()
+      }
+    );
+    return stdout
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+
+  const stdout = await runCLIText(["capture-interfaces"]);
   return stdout
     .split("\n")
     .map((value) => value.trim())
@@ -546,15 +549,22 @@ async function startCapture(request, response) {
   state.isCaptureTransitioning = true;
   const runtime = resolveHelperCommand();
   const outputPath = path.join(os.tmpdir(), `icesniff-live-${Date.now()}-${crypto.randomUUID()}.pcap`);
-  const child = spawn(
-    runtime.command,
-    [...runtime.preArgs, "start", "--interface", selectedInterface, "--output", outputPath],
-    {
-      cwd: runtime.cwd,
-      env: cliEnvironment(),
-      stdio: ["ignore", "ignore", "pipe"]
-    }
-  );
+  const captureRuntime = runtime || resolveCLICommand();
+  const captureArgs = runtime
+    ? [...runtime.preArgs, "start", "--interface", selectedInterface, "--output", outputPath]
+    : [
+        ...captureRuntime.preArgs,
+        "capture-start",
+        "--interface",
+        selectedInterface,
+        "--output",
+        outputPath
+      ];
+  const child = spawn(captureRuntime.command, captureArgs, {
+    cwd: captureRuntime.cwd,
+    env: cliEnvironment(),
+    stdio: ["ignore", "ignore", "pipe"]
+  });
 
   liveCapture.child = child;
   liveCapture.stderr = "";

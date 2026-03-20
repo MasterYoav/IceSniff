@@ -52,6 +52,7 @@ if (Test-Path $archivePath) { Remove-Item -Force $archivePath }
 New-Item -ItemType Directory -Force -Path (Join-Path $bundleRoot "bin") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $bundleRoot "libexec") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $bundleRoot "runtime") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $bundleRoot "live-app") | Out-Null
 
 Push-Location $cliRoot
 try {
@@ -68,8 +69,9 @@ try {
 
 Copy-Item $cliBinary (Join-Path $bundleRoot "libexec\icesniff-cli.exe")
 Copy-Item $runtimeSource (Join-Path $bundleRoot "runtime\wireshark") -Recurse
+Copy-Item (Join-Path $repoRoot "apps\live\*") (Join-Path $bundleRoot "live-app") -Recurse
 
-$launcher = @"
+$cliLauncher = @"
 @echo off
 setlocal
 set "SCRIPT_DIR=%~dp0"
@@ -80,17 +82,30 @@ if exist "%ICESNIFF_RUNTIME_ROOT%\wireshark" set "PATH=%ICESNIFF_RUNTIME_ROOT%\w
 "%BUNDLE_ROOT%\libexec\icesniff-cli.exe" %*
 "@
 
+$menuLauncher = @"
+@echo off
+setlocal
+set "SCRIPT_DIR=%~dp0"
+set "BUNDLE_ROOT=%SCRIPT_DIR%.."
+set "ICESNIFF_RUNTIME_ROOT=%BUNDLE_ROOT%\runtime"
+if exist "%ICESNIFF_RUNTIME_ROOT%\wireshark\bin" set "PATH=%ICESNIFF_RUNTIME_ROOT%\wireshark\bin;%PATH%"
+if exist "%ICESNIFF_RUNTIME_ROOT%\wireshark" set "PATH=%ICESNIFF_RUNTIME_ROOT%\wireshark;%PATH%"
+"%BUNDLE_ROOT%\libexec\icesniff-cli.exe" launcher %*
+"@
+
 $launcherPath = Join-Path $bundleRoot "bin\icesniff-cli.cmd"
-$aliasPath = Join-Path $bundleRoot "bin\icesniff.cmd"
-Set-Content -Path $launcherPath -Value $launcher -NoNewline
-Set-Content -Path $aliasPath -Value $launcher -NoNewline
+$menuPath = Join-Path $bundleRoot "bin\icesniff.cmd"
+Set-Content -Path $launcherPath -Value $cliLauncher -NoNewline
+Set-Content -Path $menuPath -Value $menuLauncher -NoNewline
 
 @"
 IceSniff CLI bundle
 
 This bundle contains:
 - bin\icesniff-cli.cmd launcher
+- bin\icesniff.cmd launcher menu
 - libexec\icesniff-cli.exe
+- live-app\ bundled web shell
 - a bundled Wireshark runtime for dumpcap/tshark-backed packet operations
 
 Install with:

@@ -36,8 +36,10 @@ Both installers expect GitHub release assets with these names:
 Install behavior:
 
 - extracts the release bundle into a user-local directory
-- installs `icesniff-cli` as a user-local launcher wrapper
+- installs `icesniff-cli` as a direct CLI launcher wrapper
+- installs `icesniff` as the IceSniff launcher menu
 - keeps the bundled Wireshark runtime next to the CLI bundle
+- keeps the bundled live web app files next to the CLI bundle
 - does not require users to install a separate Wireshark app for product builds
 
 ## Bundle Layout
@@ -51,6 +53,9 @@ icesniff-cli-<platform>-<arch>/
     icesniff
   libexec/
     icesniff-cli(.exe)
+  live-app/
+    server.mjs
+    public/...
   runtime/
     wireshark/bin/...
     wireshark/lib/...
@@ -59,7 +64,7 @@ icesniff-cli-<platform>-<arch>/
     Wireshark.app/Contents/MacOS/...
 ```
 
-The `bin/` launcher exports `ICESNIFF_RUNTIME_ROOT` before it execs the real binary in `libexec/`, so packaged builds can always resolve the private capture runtime without depending on repo paths or a preinstalled Wireshark app.
+The `bin/` launchers export `ICESNIFF_RUNTIME_ROOT` before they exec the real binary in `libexec/`, so packaged builds can always resolve the private capture runtime without depending on repo paths or a preinstalled Wireshark app.
 
 ## Maintainer Packaging
 

@@ -76,6 +76,9 @@ configure_linux_capture_permissions() {
 write_launcher() {
   launcher_path="$1"
   target_dir="$2"
+  entrypoint="$3"
+  install_root="$4"
+  bin_root="$5"
 
   cat > "$launcher_path" <<EOF
 #!/bin/sh
@@ -83,8 +86,12 @@ set -eu
 
 TARGET_DIR="$target_dir"
 RUNTIME_ROOT="\$TARGET_DIR/runtime"
+INSTALL_ROOT="$install_root"
+BIN_ROOT="$bin_root"
 
 export ICESNIFF_RUNTIME_ROOT="\$RUNTIME_ROOT"
+export ICESNIFF_INSTALL_ROOT="\$INSTALL_ROOT"
+export ICESNIFF_INSTALL_BIN="\$BIN_ROOT"
 
 if [ -d "\$RUNTIME_ROOT/wireshark/bin" ]; then
   export PATH="\$RUNTIME_ROOT/wireshark/bin:\$PATH"
@@ -102,7 +109,7 @@ if [ -d "\$RUNTIME_ROOT/wireshark/lib" ]; then
   fi
 fi
 
-exec "\$TARGET_DIR/libexec/icesniff-cli" "\$@"
+exec "\$TARGET_DIR/libexec/icesniff-cli" $entrypoint "\$@"
 EOF
 
   chmod +x "$launcher_path"
@@ -166,14 +173,14 @@ if [ "$platform" = "linux" ]; then
   configure_linux_capture_permissions "$target_dir/runtime/wireshark/bin/dumpcap"
 fi
 
-write_launcher "$BIN_ROOT/icesniff-cli" "$target_dir"
-ln -sfn "icesniff-cli" "$BIN_ROOT/icesniff"
+write_launcher "$BIN_ROOT/icesniff-cli" "$target_dir" "" "$INSTALL_ROOT" "$BIN_ROOT"
+write_launcher "$BIN_ROOT/icesniff" "$target_dir" "launcher" "$INSTALL_ROOT" "$BIN_ROOT"
 
 ensure_shell_path
 
 printf '\nInstalled IceSniff CLI %s to %s\n' "$tag" "$target_dir"
 printf 'Launcher: %s/icesniff-cli\n' "$BIN_ROOT"
-printf 'Alias: %s/icesniff\n' "$BIN_ROOT"
+printf 'Menu: %s/icesniff\n' "$BIN_ROOT"
 
 case ":$PATH:" in
   *":$BIN_ROOT:"*) ;;

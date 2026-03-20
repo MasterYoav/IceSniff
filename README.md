@@ -120,7 +120,12 @@ One-line installers:
 - Windows (x86_64, ARM64):
   `irm https://raw.githubusercontent.com/MasterYoav/IceSniff/main/install.ps1 | iex`
 
-The release bundles install a launcher plus a private bundled Wireshark runtime for
+After install:
+
+- `icesniff` opens the launcher menu with Live, CLI, and uninstall options
+- `icesniff-cli` starts the full-screen CLI tool directly
+
+The release bundles install both launchers plus a private bundled Wireshark runtime for
 `dumpcap`-backed live capture. See `docs/cli/install.md` for the exact bundle layout and release workflow.
 
 ### macOS App

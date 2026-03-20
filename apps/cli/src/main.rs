@@ -1,4 +1,6 @@
 mod filter_input;
+mod launcher;
+mod logo;
 mod tui;
 
 use std::env;
@@ -21,6 +23,7 @@ use app_services::{
     SaveCaptureInput, SaveCaptureService, StartLiveCaptureInput, StreamsInput, StreamsService,
     TransactionsInput, TransactionsService,
 };
+use capture_engine::CaptureEngine;
 use output_formatters::{
     render_capture_report, render_capture_report_json, render_capture_stats_report,
     render_capture_stats_report_json, render_conversation_report, render_conversation_report_json,
@@ -42,14 +45,35 @@ fn main() {
 }
 
 fn run() -> Result<(), CliError> {
-    let cli = parse_cli(env::args().skip(1)).map_err(CliError::usage)?;
+    let mut argv = env::args();
+    let invoked_as = argv.next().unwrap_or_else(|| "icesniff-cli".to_string());
+    let cli =
+        parse_cli(argv, default_command_for_invocation(&invoked_as)).map_err(CliError::usage)?;
 
     match cli.command {
         Command::Help => {
             println!("{}", help_text());
             Ok(())
         }
+        Command::Launcher => match launcher::run_launcher().map_err(CliError::from)? {
+            launcher::LauncherOutcome::StartCli => tui::run_app(None).map_err(CliError::from),
+            launcher::LauncherOutcome::Exit => Ok(()),
+        },
         Command::App { path } => tui::run_app(path).map_err(CliError::from),
+        Command::CaptureInterfaces => {
+            let interfaces = LiveCaptureCoordinator::default()
+                .list_interfaces()
+                .map_err(render_capture_error)?;
+            for interface in interfaces {
+                println!("{}", interface.name);
+            }
+            Ok(())
+        }
+        Command::CaptureStart {
+            interface,
+            output,
+            stop_file,
+        } => run_capture_start(interface, output, stop_file).map_err(CliError::from),
         Command::EngineInfo => {
             let report = engine_info_report();
             match cli.output_mode {
@@ -239,8 +263,15 @@ enum OutputMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Command {
     Help,
+    Launcher,
     App {
         path: Option<PathBuf>,
+    },
+    CaptureInterfaces,
+    CaptureStart {
+        interface: Option<String>,
+        output: PathBuf,
+        stop_file: Option<PathBuf>,
     },
     EngineInfo,
     Shell {
@@ -292,7 +323,7 @@ enum Command {
     },
 }
 
-fn parse_cli<I>(args: I) -> Result<Cli, String>
+fn parse_cli<I>(args: I, default_command: Command) -> Result<Cli, String>
 where
     I: IntoIterator<Item = String>,
 {
@@ -320,6 +351,12 @@ where
 
     let command = match command_name.as_deref() {
         Some("help") => Command::Help,
+        Some("launcher") => {
+            if !remaining.is_empty() {
+                return Err(usage("launcher does not accept extra arguments"));
+            }
+            Command::Launcher
+        }
         Some("app") => {
             if remaining.len() > 1 {
                 return Err(usage("too many arguments for app"));
@@ -328,8 +365,15 @@ where
                 path: remaining.first().map(PathBuf::from),
             }
         }
+        Some("capture-interfaces") => {
+            if !remaining.is_empty() {
+                return Err(usage("capture-interfaces does not accept extra arguments"));
+            }
+            Command::CaptureInterfaces
+        }
+        Some("capture-start") => parse_capture_start_command(&remaining)?,
         Some("engine-info") => Command::EngineInfo,
-        None => Command::App { path: None },
+        None => default_command,
         Some("shell") => Command::Shell {
             path: remaining.first().map(PathBuf::from),
         },
@@ -457,6 +501,66 @@ where
     })
 }
 
+fn default_command_for_invocation(invoked_as: &str) -> Command {
+    let executable = PathBuf::from(invoked_as);
+    let stem = executable
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("icesniff-cli");
+    if stem.eq_ignore_ascii_case("icesniff") {
+        Command::Launcher
+    } else {
+        Command::App { path: None }
+    }
+}
+
+fn parse_capture_start_command(args: &[String]) -> Result<Command, String> {
+    let mut interface = None;
+    let mut output = None;
+    let mut stop_file = None;
+    let mut index = 0usize;
+
+    while index < args.len() {
+        match args[index].as_str() {
+            "--interface" => {
+                interface = Some(
+                    args.get(index + 1)
+                        .ok_or_else(|| usage("missing value for --interface"))?
+                        .clone(),
+                );
+                index += 2;
+            }
+            "--output" => {
+                output = Some(PathBuf::from(
+                    args.get(index + 1)
+                        .ok_or_else(|| usage("missing value for --output"))?,
+                ));
+                index += 2;
+            }
+            "--stop-file" => {
+                stop_file = Some(PathBuf::from(
+                    args.get(index + 1)
+                        .ok_or_else(|| usage("missing value for --stop-file"))?,
+                ));
+                index += 2;
+            }
+            unexpected => {
+                return Err(usage(&format!(
+                    "unknown argument for capture-start: {unexpected}"
+                )));
+            }
+        }
+    }
+
+    let output = output.ok_or_else(|| usage("capture-start requires --output <path>"))?;
+
+    Ok(Command::CaptureStart {
+        interface,
+        output,
+        stop_file,
+    })
+}
+
 fn single_path_arg(command: &str, args: &[String]) -> Result<PathBuf, String> {
     let path = args
         .first()
@@ -523,8 +627,11 @@ IceSniff CLI
 
 Usage:
   icesniff-cli help
+  icesniff-cli launcher
   icesniff-cli [capture-file]
   icesniff-cli app [capture-file]
+  icesniff-cli capture-interfaces
+  icesniff-cli capture-start [--interface <name>] --output <capture-file> [--stop-file <path>]
   icesniff-cli [--json] engine-info
   icesniff-cli [--json] shell [capture-file]
   icesniff-cli [--json] save <source-capture-file> <output-capture-file> [--filter <expr>] [--stream-filter <expr>]
@@ -537,7 +644,10 @@ Usage:
   icesniff-cli [--json] transactions <capture-file> [--filter <expr>] [--transaction-filter <expr>]
 
 Commands:
+  launcher     Show the installed IceSniff launcher menu.
   app          Launch the full-screen IceSniff terminal app.
+  capture-interfaces  Print capture interfaces for app launchers and web clients.
+  capture-start  Start a long-running live capture writer for app launchers and web clients.
   engine-info  Print versioned engine capabilities for app clients.
   shell        Start an interactive IceSniff session with a current capture context.
   save         Write packet/stream-filtered capture output into a new PCAP file.
@@ -561,7 +671,53 @@ Error codes:
 
 Notes:
   Running `icesniff-cli` with no command launches the interactive terminal app.
+  Running `icesniff launcher` opens the installed IceSniff menu.
 "
+}
+
+fn run_capture_start(
+    interface: Option<String>,
+    output: PathBuf,
+    stop_file: Option<PathBuf>,
+) -> Result<(), String> {
+    let should_stop = Arc::new(AtomicBool::new(false));
+    let signal_stop = Arc::clone(&should_stop);
+    ctrlc::set_handler(move || {
+        signal_stop.store(true, Ordering::Relaxed);
+    })
+    .map_err(|error| format!("failed to install signal handler: {error}"))?;
+
+    let engine = CaptureEngine::default();
+    let interface = match interface {
+        Some(interface) => interface,
+        None => {
+            engine
+                .default_interface()
+                .map_err(render_capture_error)?
+                .name
+        }
+    };
+    let mut session = engine
+        .start_capture(&interface, output.clone())
+        .map_err(render_capture_error)?;
+
+    println!("ready {}", output.display());
+
+    while !should_stop.load(Ordering::Relaxed) {
+        if let Some(stop_file) = &stop_file {
+            if stop_file.is_file() {
+                should_stop.store(true, Ordering::Relaxed);
+                break;
+            }
+        }
+        if !session.is_running().map_err(render_capture_error)? {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    session.stop().map_err(render_capture_error)?;
+    Ok(())
 }
 
 fn engine_info_report() -> EngineInfoReport {

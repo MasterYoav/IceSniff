@@ -160,9 +160,10 @@ copy_runtime() {
 
 write_unix_launchers() {
   target_root="$1"
-  launcher_path="$target_root/bin/icesniff-cli"
+  cli_launcher_path="$target_root/bin/icesniff-cli"
+  menu_launcher_path="$target_root/bin/icesniff"
 
-  cat > "$launcher_path" <<'EOF'
+  cat > "$cli_launcher_path" <<'EOF'
 #!/bin/sh
 set -eu
 
@@ -191,8 +192,36 @@ fi
 exec "$BUNDLE_ROOT/libexec/icesniff-cli" "$@"
 EOF
 
-  chmod +x "$launcher_path"
-  ln -sf "icesniff-cli" "$target_root/bin/icesniff"
+  cat > "$menu_launcher_path" <<'EOF'
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+BUNDLE_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+RUNTIME_ROOT="$BUNDLE_ROOT/runtime"
+
+export ICESNIFF_RUNTIME_ROOT="$RUNTIME_ROOT"
+
+if [ -d "$RUNTIME_ROOT/wireshark/bin" ]; then
+  export PATH="$RUNTIME_ROOT/wireshark/bin:$PATH"
+fi
+
+if [ -d "$RUNTIME_ROOT/Wireshark.app/Contents/MacOS" ]; then
+  export PATH="$RUNTIME_ROOT/Wireshark.app/Contents/MacOS:$PATH"
+fi
+
+if [ -d "$RUNTIME_ROOT/wireshark/lib" ]; then
+  if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+    export LD_LIBRARY_PATH="$RUNTIME_ROOT/wireshark/lib:$LD_LIBRARY_PATH"
+  else
+    export LD_LIBRARY_PATH="$RUNTIME_ROOT/wireshark/lib"
+  fi
+fi
+
+exec "$BUNDLE_ROOT/libexec/icesniff-cli" launcher "$@"
+EOF
+
+  chmod +x "$cli_launcher_path" "$menu_launcher_path"
 }
 
 platform="$(detect_os)"
@@ -204,7 +233,7 @@ runtime_path="$(runtime_source)"
 
 mkdir -p "$DIST_ROOT"
 rm -rf "$bundle_root" "$archive_path"
-mkdir -p "$bundle_root/bin" "$bundle_root/libexec" "$bundle_root/runtime"
+mkdir -p "$bundle_root/bin" "$bundle_root/libexec" "$bundle_root/runtime" "$bundle_root/live-app"
 
 cd "$CLI_ROOT"
 if [ "$PROFILE" = "release" ]; then
@@ -220,13 +249,16 @@ chmod +x "$bundle_root/libexec/icesniff-cli"
 write_unix_launchers "$bundle_root"
 
 copy_runtime "$runtime_path" "$bundle_root/runtime"
+cp -R "$REPO_ROOT/apps/live"/. "$bundle_root/live-app/"
 
 cat > "$bundle_root/README.txt" <<EOF
 IceSniff CLI bundle
 
 This bundle contains:
 - bin/icesniff-cli launcher
+- bin/icesniff launcher menu
 - libexec/icesniff-cli
+- live-app/ bundled web shell
 - a bundled Wireshark runtime for dumpcap/tshark-backed packet operations
 
 Install with:
