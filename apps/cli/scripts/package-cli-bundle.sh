@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 CLI_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
-REPO_ROOT="$(CDPATH= cd -- "$CLI_ROOT/.." && pwd)"
+REPO_ROOT="$(CDPATH= cd -- "$CLI_ROOT/../.." && pwd)"
 DIST_ROOT="${ICESNIFF_DIST_ROOT:-$CLI_ROOT/dist}"
 RUNTIME_ROOT="${ICESNIFF_WIRESHARK_RUNTIME_ROOT:-}"
 WIRESHARK_APP="${ICESNIFF_WIRESHARK_APP:-}"
