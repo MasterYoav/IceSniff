@@ -65,7 +65,7 @@ jobs:
 
       - name: Build macOS CLI bundle
         working-directory: apps/cli
-        run: ./scripts/package-cli-bundle.sh
+        run: sh ./scripts/package-cli-bundle.sh
 
       - name: Upload macOS bundle
         uses: softprops/action-gh-release@v2
@@ -104,7 +104,7 @@ jobs:
 
       - name: Build Linux CLI bundle
         working-directory: apps/cli
-        run: ./scripts/package-cli-bundle.sh
+        run: sh ./scripts/package-cli-bundle.sh
 
       - name: Upload Linux bundle
         uses: softprops/action-gh-release@v2
@@ -134,7 +134,13 @@ jobs:
       - name: Install Wireshark runtime
         shell: pwsh
         run: |
-          winget install --id WiresharkFoundation.Wireshark --exact --silent --accept-package-agreements --accept-source-agreements
+          if (Get-Command choco -ErrorAction SilentlyContinue) {
+            choco install wireshark --yes --no-progress
+          } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+            winget install --id WiresharkFoundation.Wireshark --exact --silent --accept-package-agreements --accept-source-agreements
+          } else {
+            throw "Neither choco nor winget is available on this runner."
+          }
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -142,7 +148,7 @@ jobs:
       - name: Build Windows CLI bundle
         shell: pwsh
         working-directory: apps/cli
-        run: .\scripts\package-cli-bundle.ps1
+        run: pwsh -NoLogo -NoProfile -File .\scripts\package-cli-bundle.ps1
 
       - name: Upload Windows bundle
         uses: softprops/action-gh-release@v2

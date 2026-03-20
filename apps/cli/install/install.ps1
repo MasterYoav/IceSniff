@@ -13,6 +13,17 @@ function Get-Arch {
     }
 }
 
+function Get-AssetCandidates([string]$Arch) {
+    if ($Arch -eq "aarch64") {
+        return @(
+            "icesniff-cli-windows-aarch64.zip",
+            "icesniff-cli-windows-x86_64.zip"
+        )
+    }
+
+    return @("icesniff-cli-windows-$Arch.zip")
+}
+
 function Resolve-Tag {
     if ($version -ne "latest") {
         return $version
@@ -42,11 +53,9 @@ function Ensure-UserPathContains([string]$PathEntry) {
 
 $arch = Get-Arch
 $tag = Resolve-Tag
-$asset = "icesniff-cli-windows-$arch.zip"
-$url = "https://github.com/$repo/releases/download/$tag/$asset"
+$assetCandidates = Get-AssetCandidates $arch
 
 $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("icesniff-install-" + [guid]::NewGuid().ToString("N"))
-$archive = Join-Path $tempDir $asset
 $targetDir = Join-Path $installRoot $tag
 
 New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
@@ -54,10 +63,21 @@ New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $binRoot | Out-Null
 
 try {
-    try {
-        Invoke-WebRequest -Uri $url -OutFile $archive
-    } catch {
-        throw "Failed to download $asset from release $tag. This usually means the current architecture is not published yet."
+    $archive = $null
+    foreach ($asset in $assetCandidates) {
+        $url = "https://github.com/$repo/releases/download/$tag/$asset"
+        $candidateArchive = Join-Path $tempDir $asset
+        try {
+            Invoke-WebRequest -Uri $url -OutFile $candidateArchive
+            $archive = $candidateArchive
+            break
+        } catch {
+            continue
+        }
+    }
+
+    if (-not $archive) {
+        throw "Failed to download a Windows CLI bundle for release $tag. Checked: $($assetCandidates -join ', ')."
     }
     if (Test-Path $targetDir) {
         Remove-Item -Recurse -Force $targetDir
