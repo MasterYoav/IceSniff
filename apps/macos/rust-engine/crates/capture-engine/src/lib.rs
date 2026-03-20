@@ -47,7 +47,7 @@ impl ActiveCaptureSession {
     pub fn is_running(&mut self) -> Result<bool, CaptureError> {
         if self.finished_flag.load(Ordering::Relaxed) {
             self.join_finished_capture_thread()?;
-            return Ok(false)
+            return Ok(false);
         }
 
         Ok(match &self.join_handle {
@@ -64,7 +64,7 @@ impl ActiveCaptureSession {
 
     fn join_finished_capture_thread(&mut self) -> Result<(), CaptureError> {
         let Some(handle) = self.join_handle.take() else {
-            return Ok(())
+            return Ok(());
         };
 
         match handle.join() {
@@ -271,26 +271,28 @@ fn map_pcap_error(error: PcapError, action: CaptureAction) -> CaptureError {
         || normalized.contains("operation not permitted")
         || normalized.contains("/dev/bpf")
     {
-        return CaptureError::PermissionDenied(message)
+        return CaptureError::PermissionDenied(message);
     }
 
     if normalized.contains("interface") || normalized.contains("device") {
         return match action {
             CaptureAction::EnumerateInterfaces => CaptureError::InterfaceEnumerationFailed(message),
             _ => CaptureError::StartFailed(message),
-        }
+        };
     }
 
     if normalized.contains("libpcap")
         || normalized.contains("pcap")
         || normalized.contains("datalink")
     {
-        return CaptureError::DriverUnavailable(message)
+        return CaptureError::DriverUnavailable(message);
     }
 
     match action {
         CaptureAction::EnumerateInterfaces => CaptureError::InterfaceEnumerationFailed(message),
-        CaptureAction::StartCapture | CaptureAction::ReadPacket => CaptureError::StartFailed(message),
+        CaptureAction::StartCapture | CaptureAction::ReadPacket => {
+            CaptureError::StartFailed(message)
+        }
     }
 }
 

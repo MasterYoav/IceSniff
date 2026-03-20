@@ -610,12 +610,16 @@ mod tests {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let candidate_paths = [
             manifest_dir.join("../../fixtures/golden").join(name),
-            manifest_dir.join("../../../../cli/fixtures/golden").join(name),
+            manifest_dir
+                .join("../../../../cli/fixtures/golden")
+                .join(name),
         ];
         let path = candidate_paths
             .into_iter()
             .find(|path| path.exists())
-            .unwrap_or_else(|| panic!("failed to find fixture {name} in expected workspace locations"));
+            .unwrap_or_else(|| {
+                panic!("failed to find fixture {name} in expected workspace locations")
+            });
         let hex = fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("failed to read fixture {}: {error}", path.display()));
         decode_hex_fixture(&hex).unwrap_or_else(|error| {

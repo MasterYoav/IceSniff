@@ -386,8 +386,11 @@ fn tshark_literal(value: &str) -> String {
 }
 
 fn sanitize_protocol_name(value: &str) -> String {
-    value.chars()
-        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'))
+    value
+        .chars()
+        .filter(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        })
         .collect::<String>()
         .to_ascii_lowercase()
 }
@@ -1112,7 +1115,8 @@ mod tests {
 
     #[test]
     fn translates_protocol_and_port_filters_to_tshark() {
-        let filter = translate_filter_to_tshark_display_filter("protocol=quic && port=443").unwrap();
+        let filter =
+            translate_filter_to_tshark_display_filter("protocol=quic && port=443").unwrap();
         assert!(filter.contains("quic"));
         assert!(filter.contains("tcp.port == 443"));
         assert!(filter.contains("udp.port == 443"));

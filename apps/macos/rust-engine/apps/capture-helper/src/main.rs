@@ -28,7 +28,9 @@ fn run() -> Result<(), String> {
                 return Err("list-interfaces does not accept extra arguments".to_string());
             }
             let engine = CaptureEngine::default();
-            let interfaces = engine.available_interfaces().map_err(|error| error.to_string())?;
+            let interfaces = engine
+                .available_interfaces()
+                .map_err(|error| error.to_string())?;
             for interface in interfaces {
                 println!("{}", interface.name);
             }

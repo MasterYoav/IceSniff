@@ -6,8 +6,8 @@ use std::process::Command;
 use session_model::{
     ApplicationLayerSummary, ArpPacketSummary, ByteRange, CapturedPacket, DecodedPacket,
     DnsMessageSummary, EthernetFrameSummary, FieldNode, HttpMessageSummary, IcmpPacketSummary,
-    Ipv4PacketSummary, Ipv6PacketSummary, LinkLayerSummary, NetworkLayerSummary,
-    TcpSegmentSummary, TlsHandshakeSummary, TransportLayerSummary, UdpDatagramSummary,
+    Ipv4PacketSummary, Ipv6PacketSummary, LinkLayerSummary, NetworkLayerSummary, TcpSegmentSummary,
+    TlsHandshakeSummary, TransportLayerSummary, UdpDatagramSummary,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,10 +27,11 @@ pub fn filter_packet_indexes(
         Some(path) => path,
         None => return Ok(None),
     };
-    let display_filter = match filter_engine::translate_filter_to_tshark_display_filter(filter_expression) {
-        Ok(filter) => filter,
-        Err(_) => return Ok(None),
-    };
+    let display_filter =
+        match filter_engine::translate_filter_to_tshark_display_filter(filter_expression) {
+            Ok(filter) => filter,
+            Err(_) => return Ok(None),
+        };
 
     let output = Command::new(&tshark_path)
         .args([
@@ -52,7 +53,9 @@ pub fn filter_packet_indexes(
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let first_line = stderr.lines().next().unwrap_or("unknown tshark failure");
-        return Err(format!("tshark failed to evaluate the filter: {first_line}"));
+        return Err(format!(
+            "tshark failed to evaluate the filter: {first_line}"
+        ));
     }
 
     let stdout = String::from_utf8(output.stdout)
@@ -110,7 +113,9 @@ pub fn packet_list_metadata(
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let first_line = stderr.lines().next().unwrap_or("unknown tshark failure");
-        return Err(format!("tshark failed to read packet list metadata: {first_line}"));
+        return Err(format!(
+            "tshark failed to read packet list metadata: {first_line}"
+        ));
     }
 
     let stdout = String::from_utf8(output.stdout)
@@ -119,7 +124,10 @@ pub fn packet_list_metadata(
 
     for line in stdout.lines() {
         let mut parts = line.splitn(6, '\t');
-        let Some(frame_number) = parts.next().and_then(|value| value.trim().parse::<u64>().ok()) else {
+        let Some(frame_number) = parts
+            .next()
+            .and_then(|value| value.trim().parse::<u64>().ok())
+        else {
             continue;
         };
         let index = match frame_number.checked_sub(1) {
@@ -229,7 +237,10 @@ fn parse_pdml_packet(xml: &str, packet: &CapturedPacket) -> Result<DecodedPacket
         network: infer_network_layer(&lookup),
         transport: infer_transport_layer(&lookup),
         application: infer_application_layer(&lookup),
-        fields: pdml_fields.into_iter().map(PdmlField::into_public).collect(),
+        fields: pdml_fields
+            .into_iter()
+            .map(PdmlField::into_public)
+            .collect(),
         notes: vec!["Decoded with bundled tshark for extended protocol coverage.".to_string()],
     })
 }
@@ -251,7 +262,11 @@ impl PdmlField {
             name: self.name,
             value: self.value,
             byte_range: self.byte_range,
-            children: self.children.into_iter().map(PdmlField::into_public).collect(),
+            children: self
+                .children
+                .into_iter()
+                .map(PdmlField::into_public)
+                .collect(),
         }
     }
 }
@@ -284,7 +299,11 @@ fn parse_pdml_fields(xml: &str) -> Result<Vec<PdmlField>, String> {
             continue;
         }
 
-        let tag_name = if line.starts_with("<proto ") { "proto" } else { "field" };
+        let tag_name = if line.starts_with("<proto ") {
+            "proto"
+        } else {
+            "field"
+        };
         let attributes = parse_xml_attributes(line);
         let field_name = attributes.get("name").cloned().unwrap_or_default();
         if tag_name == "proto" && field_name == "geninfo" {
@@ -534,7 +553,10 @@ fn infer_network_layer(lookup: &FieldLookup) -> Option<NetworkLayerSummary> {
         }));
     }
 
-    if lookup.any(&["arp.src.hw_mac", "arp.src.proto_ipv4"]).is_some() {
+    if lookup
+        .any(&["arp.src.hw_mac", "arp.src.proto_ipv4"])
+        .is_some()
+    {
         return Some(NetworkLayerSummary::Arp(ArpPacketSummary {
             operation: parse_u16(lookup.first("arp.opcode")).unwrap_or_default(),
             sender_hardware_address: lookup.first("arp.src.hw_mac").unwrap_or("").to_string(),
@@ -578,7 +600,10 @@ fn infer_transport_layer(lookup: &FieldLookup) -> Option<TransportLayerSummary> 
 }
 
 fn infer_application_layer(lookup: &FieldLookup) -> Option<ApplicationLayerSummary> {
-    if lookup.any(&["http.request.method", "http.response.code"]).is_some() {
+    if lookup
+        .any(&["http.request.method", "http.response.code"])
+        .is_some()
+    {
         let status_code = parse_u16(lookup.first("http.response.code"));
         return Some(ApplicationLayerSummary::Http(HttpMessageSummary {
             kind: if status_code.is_some() {
@@ -591,7 +616,9 @@ fn infer_application_layer(lookup: &FieldLookup) -> Option<ApplicationLayerSumma
                 .any(&["http.request.uri", "http.request.full_uri"])
                 .map(ToString::to_string),
             status_code,
-            reason_phrase: lookup.first("http.response.phrase").map(ToString::to_string),
+            reason_phrase: lookup
+                .first("http.response.phrase")
+                .map(ToString::to_string),
             host: lookup.first("http.host").map(ToString::to_string),
         }));
     }
@@ -611,7 +638,10 @@ fn infer_application_layer(lookup: &FieldLookup) -> Option<ApplicationLayerSumma
         }));
     }
 
-    if lookup.any(&["tls.handshake.type", "ssl.handshake.type"]).is_some() {
+    if lookup
+        .any(&["tls.handshake.type", "ssl.handshake.type"])
+        .is_some()
+    {
         let handshake_code = lookup
             .any(&["tls.handshake.type", "ssl.handshake.type"])
             .unwrap_or_default();
@@ -621,10 +651,15 @@ fn infer_application_layer(lookup: &FieldLookup) -> Option<ApplicationLayerSumma
                 .unwrap_or("unknown")
                 .to_string(),
             handshake_type: tls_handshake_name(handshake_code).to_string(),
-            handshake_length: parse_u32(lookup.any(&["tls.handshake.length", "ssl.handshake.length"]))
-                .unwrap_or_default(),
+            handshake_length: parse_u32(
+                lookup.any(&["tls.handshake.length", "ssl.handshake.length"]),
+            )
+            .unwrap_or_default(),
             server_name: lookup
-                .any(&["tls.handshake.extensions_server_name", "ssl.handshake.extensions_server_name"])
+                .any(&[
+                    "tls.handshake.extensions_server_name",
+                    "ssl.handshake.extensions_server_name",
+                ])
                 .map(ToString::to_string),
         }));
     }
@@ -732,9 +767,18 @@ mod tests {
 
         let decoded = parse_pdml_packet(xml, &packet).expect("pdml should parse");
         assert!(matches!(decoded.link, LinkLayerSummary::Ethernet(_)));
-        assert!(matches!(decoded.network, Some(NetworkLayerSummary::Ipv4(_))));
-        assert!(matches!(decoded.transport, Some(TransportLayerSummary::Tcp(_))));
-        assert!(matches!(decoded.application, Some(ApplicationLayerSummary::Http(_))));
+        assert!(matches!(
+            decoded.network,
+            Some(NetworkLayerSummary::Ipv4(_))
+        ));
+        assert!(matches!(
+            decoded.transport,
+            Some(TransportLayerSummary::Tcp(_))
+        ));
+        assert!(matches!(
+            decoded.application,
+            Some(ApplicationLayerSummary::Http(_))
+        ));
         assert_eq!(decoded.fields.len(), 4);
     }
 
