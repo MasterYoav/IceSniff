@@ -115,9 +115,9 @@ cargo run -p icesniff-cli -- transactions path/to/capture.pcap
 
 One-line installers:
 
-- macOS (Apple Silicon) / Linux (x86_64):
+- macOS (Apple Silicon) / Linux (x86_64, ARM64):
   `curl -fsSL https://raw.githubusercontent.com/MasterYoav/IceSniff/main/install.sh | sh`
-- Windows (x86_64):
+- Windows (x86_64, ARM64):
   `irm https://raw.githubusercontent.com/MasterYoav/IceSniff/main/install.ps1 | iex`
 
 The release bundles install a launcher plus a private bundled Wireshark runtime for

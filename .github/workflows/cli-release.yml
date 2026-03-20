@@ -75,11 +75,19 @@ jobs:
           fail_on_unmatched_files: true
 
   bundle-linux:
-    name: Bundle CLI (Linux)
-    runs-on: ubuntu-latest
+    name: Bundle CLI (Linux ${{ matrix.runner.arch }})
+    runs-on: ${{ matrix.runner.label }}
     needs:
       - prepare
       - create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - label: ubuntu-latest
+            arch: x86_64
+          - label: ubuntu-24.04-arm
+            arch: aarch64
     env:
       DEBIAN_FRONTEND: noninteractive
     steps:
@@ -106,11 +114,19 @@ jobs:
           fail_on_unmatched_files: true
 
   bundle-windows:
-    name: Bundle CLI (Windows)
-    runs-on: windows-latest
+    name: Bundle CLI (Windows ${{ matrix.runner.arch }})
+    runs-on: ${{ matrix.runner.label }}
     needs:
       - prepare
       - create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - label: windows-latest
+            arch: x86_64
+          - label: windows-11-arm
+            arch: aarch64
     steps:
       - name: Checkout
         uses: actions/checkout@v4

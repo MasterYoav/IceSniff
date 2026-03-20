@@ -14,6 +14,7 @@ Current published targets:
 
 - macOS Apple Silicon (`icesniff-cli-macos-aarch64.tar.gz`)
 - Linux x86_64 (`icesniff-cli-linux-x86_64.tar.gz`)
+- Linux ARM64 (`icesniff-cli-linux-aarch64.tar.gz`)
 
 ### Windows
 
@@ -24,6 +25,7 @@ irm https://raw.githubusercontent.com/MasterYoav/IceSniff/main/install.ps1 | iex
 Current published targets:
 
 - Windows x86_64 (`icesniff-cli-windows-x86_64.zip`)
+- Windows ARM64 (`icesniff-cli-windows-aarch64.zip`)
 
 Both installers expect GitHub release assets with these names:
 
@@ -103,8 +105,8 @@ Triggers:
 The workflow currently produces:
 
 - macOS Apple Silicon bundle from the repo-bundled `Wireshark.app`
-- Linux x86_64 bundle from staged `tshark` / `dumpcap` plus shared libraries on `ubuntu-latest`
-- Windows x86_64 bundle from a silent Wireshark install on `windows-latest`
+- Linux x86_64 and ARM64 bundles from staged `tshark` / `dumpcap` plus shared libraries on GitHub-hosted Ubuntu runners
+- Windows x86_64 and ARM64 bundles from a silent Wireshark install on GitHub-hosted Windows runners
 
 ## Notes
 
