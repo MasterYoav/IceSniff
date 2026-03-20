@@ -40,6 +40,41 @@ ensure_shell_path() {
   fi
 }
 
+write_launcher() {
+  launcher_path="$1"
+  target_dir="$2"
+
+  cat > "$launcher_path" <<EOF
+#!/bin/sh
+set -eu
+
+TARGET_DIR="$target_dir"
+RUNTIME_ROOT="\$TARGET_DIR/runtime"
+
+export ICESNIFF_RUNTIME_ROOT="\$RUNTIME_ROOT"
+
+if [ -d "\$RUNTIME_ROOT/wireshark/bin" ]; then
+  export PATH="\$RUNTIME_ROOT/wireshark/bin:\$PATH"
+fi
+
+if [ -d "\$RUNTIME_ROOT/Wireshark.app/Contents/MacOS" ]; then
+  export PATH="\$RUNTIME_ROOT/Wireshark.app/Contents/MacOS:\$PATH"
+fi
+
+if [ -d "\$RUNTIME_ROOT/wireshark/lib" ]; then
+  if [ -n "\${LD_LIBRARY_PATH:-}" ]; then
+    export LD_LIBRARY_PATH="\$RUNTIME_ROOT/wireshark/lib:\$LD_LIBRARY_PATH"
+  else
+    export LD_LIBRARY_PATH="\$RUNTIME_ROOT/wireshark/lib"
+  fi
+fi
+
+exec "\$TARGET_DIR/libexec/icesniff-cli" "\$@"
+EOF
+
+  chmod +x "$launcher_path"
+}
+
 detect_os() {
   case "$(uname -s)" in
     Darwin) printf '%s' "macos" ;;
@@ -94,8 +129,8 @@ rm -rf "$target_dir"
 mkdir -p "$target_dir"
 tar -xzf "$archive" -C "$target_dir" --strip-components=1
 
-ln -sfn "$target_dir/bin/icesniff-cli" "$BIN_ROOT/icesniff-cli"
-ln -sfn "$target_dir/bin/icesniff" "$BIN_ROOT/icesniff"
+write_launcher "$BIN_ROOT/icesniff-cli" "$target_dir"
+ln -sfn "icesniff-cli" "$BIN_ROOT/icesniff"
 
 ensure_shell_path
 

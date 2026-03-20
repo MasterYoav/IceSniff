@@ -57,6 +57,21 @@ function Ensure-UserPathContains([string]$PathEntry) {
     $env:Path = "$PathEntry;$env:Path"
 }
 
+function Write-Launcher([string]$LauncherPath, [string]$TargetDir) {
+    $targetDir = $TargetDir.Replace('/', '\')
+    $launcher = @"
+@echo off
+setlocal
+set "TARGET_DIR=$targetDir"
+set "ICESNIFF_RUNTIME_ROOT=%TARGET_DIR%\runtime"
+if exist "%ICESNIFF_RUNTIME_ROOT%\wireshark\bin" set "PATH=%ICESNIFF_RUNTIME_ROOT%\wireshark\bin;%PATH%"
+if exist "%ICESNIFF_RUNTIME_ROOT%\wireshark" set "PATH=%ICESNIFF_RUNTIME_ROOT%\wireshark;%PATH%"
+"%TARGET_DIR%\libexec\icesniff-cli.exe" %*
+"@
+
+    Set-Content -Path $LauncherPath -Value $launcher -NoNewline
+}
+
 $arch = Get-Arch
 $tag = Resolve-Tag
 $assetCandidates = Get-AssetCandidates $arch
@@ -99,8 +114,8 @@ try {
         Remove-Item -Recurse -Force $expandedRoot.FullName
     }
 
-    Copy-Item (Join-Path $targetDir "bin\icesniff-cli.cmd") (Join-Path $binRoot "icesniff-cli.cmd") -Force
-    Copy-Item (Join-Path $targetDir "bin\icesniff.cmd") (Join-Path $binRoot "icesniff.cmd") -Force
+    Write-Launcher (Join-Path $binRoot "icesniff-cli.cmd") $targetDir
+    Write-Launcher (Join-Path $binRoot "icesniff.cmd") $targetDir
     Ensure-UserPathContains $binRoot
 } finally {
     if (Test-Path $tempDir) {
