@@ -18,7 +18,7 @@ IceSniff is released under the MIT License. See `LICENSE`.
 
 [![Rust](https://img.shields.io/badge/Rust-%23000000.svg?e&logo=rust&logoColor=white)](#)
 [![Swift](https://img.shields.io/badge/Swift-F54A2A?logo=swift&logoColor=white)](#)
-[![Wireshark](https://img.shields.io/badge/Wireshark-%230000ff?logo=%231679A7&style=flat&logoColor=%23ffffff)](wireshark.org)
+[![Wireshark](https://img.shields.io/badge/Wireshark-%230000ff?logo=wireshark&style=flat&logoColor=%23fff)]
 [![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?logo=supabase&logoColor=fff)](#)
 
 ## What Works Today
