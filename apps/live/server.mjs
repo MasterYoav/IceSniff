@@ -408,6 +408,41 @@ function safeFilename(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, "-");
 }
 
+function normalizeSimpleFilterToken(token) {
+  if (/^\d+$/.test(token)) {
+    return `port=${token}`;
+  }
+
+  if (/^[a-z][a-z0-9_.-]*$/i.test(token)) {
+    return `protocol=${token.toLowerCase()}`;
+  }
+
+  return null;
+}
+
+function normalizeFilterExpression(filter) {
+  const trimmed = typeof filter === "string" ? filter.trim() : "";
+  if (!trimmed) {
+    return null;
+  }
+
+  if (/[=<>!~()&|]/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const tokens = trimmed.split(/\s+/).filter(Boolean);
+  if (!tokens.length) {
+    return null;
+  }
+
+  const normalizedTokens = tokens.map(normalizeSimpleFilterToken);
+  if (normalizedTokens.every(Boolean)) {
+    return normalizedTokens.join(" && ");
+  }
+
+  return trimmed;
+}
+
 async function uploadCapture(request, response, requestURL) {
   const fileName = safeFilename(requestURL.searchParams.get("name") || "capture.pcap");
   const bytes = await readRequestBody(request, MAX_UPLOAD_BYTES);
@@ -429,7 +464,7 @@ async function refreshAnalysis(request, response) {
   }
 
   const body = await readJSONBody(request);
-  const filter = typeof body.filter === "string" && body.filter.trim() ? body.filter.trim() : null;
+  const filter = normalizeFilterExpression(body.filter);
   const limit = String(body.limit || "200");
 
   try {
@@ -569,6 +604,33 @@ async function startCapture(request, response) {
   sendJSON(response, 200, { ok: true, state: buildPublicState() });
 }
 
+async function selectCaptureInterface(request, response) {
+  const body = await readJSONBody(request);
+  const selectedInterface = typeof body.interface === "string" ? body.interface.trim() : "";
+
+  if (!selectedInterface) {
+    sendJSON(response, 400, { ok: false, message: "No capture interface selected.", state: buildPublicState() });
+    return;
+  }
+
+  if (state.isSniffing || state.isCaptureTransitioning) {
+    sendJSON(response, 409, { ok: false, message: "Stop live capture before changing the interface.", state: buildPublicState() });
+    return;
+  }
+
+  if (!state.availableCaptureInterfaces.includes(selectedInterface)) {
+    sendJSON(response, 400, { ok: false, message: `Unknown capture interface: ${selectedInterface}`, state: buildPublicState() });
+    return;
+  }
+
+  state.selectedCaptureInterface = selectedInterface;
+  if (!state.isSniffing) {
+    state.statusMessage = `Selected capture interface: ${selectedInterface}`;
+  }
+
+  sendJSON(response, 200, { ok: true, state: buildPublicState() });
+}
+
 async function stopCapture(response) {
   if (!liveCapture.child) {
     sendJSON(response, 409, { ok: false, message: "No live capture is running.", state: buildPublicState() });
@@ -612,7 +674,7 @@ async function saveCapture(response, request) {
   }
 
   const body = await readJSONBody(request);
-  const filter = typeof body.filter === "string" && body.filter.trim() ? body.filter.trim() : null;
+  const filter = normalizeFilterExpression(body.filter);
   const outputPath = path.join(os.tmpdir(), `icesniff-export-${Date.now()}.pcap`);
 
   try {
@@ -688,6 +750,11 @@ const server = createServer(async (request, response) => {
 
     if (request.method === "POST" && requestURL.pathname === "/api/capture/start") {
       await startCapture(request, response);
+      return;
+    }
+
+    if (request.method === "POST" && requestURL.pathname === "/api/capture/interface") {
+      await selectCaptureInterface(request, response);
       return;
     }
 

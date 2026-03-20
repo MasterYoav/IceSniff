@@ -63,7 +63,8 @@ The local web app currently supports:
 - starting and stopping live capture through the Rust capture helper with an in-app toggle control
 - saving the current capture from the packets view
 - packet, stats, conversations, streams, and transactions views
-- browser-local UI preferences for theme, font, and panel-background density
+- browser-local UI preferences for modern themes, fonts, and type scale
+- double-click packet preview in the packets view
 - analysis driven by the same `icesniff-cli` + `tshark` engine used by the macOS app
 
 ## What Is Not Done Yet

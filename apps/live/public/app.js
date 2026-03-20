@@ -24,6 +24,7 @@ const initialUI = {
   activeSection: localStorage.getItem("icesniff.live.section") || "packets",
   appTheme: localStorage.getItem("icesniff.live.theme") || "defaultDark",
   fontChoice: localStorage.getItem("icesniff.live.font") || "rounded",
+  fontScale: Math.min(1.3, Math.max(0.9, Number(localStorage.getItem("icesniff.live.fontScale")) || 1)),
   panelBackgrounds: localStorage.getItem("icesniff.live.panelBackgrounds") !== "0",
   navOpen: localStorage.getItem("icesniff.live.navOpen") !== "0",
   chatCollapsed: localStorage.getItem("icesniff.live.chat") !== "0",
@@ -43,6 +44,7 @@ const initialUI = {
   capturePath: "",
   availableCaptureInterfaces: ["en0"],
   selectedCaptureInterface: "en0",
+  packetPreview: null,
   isSniffing: false,
   isCaptureTransitioning: false,
   captureBackendName: "Unavailable",
@@ -79,6 +81,7 @@ function persistUI() {
   localStorage.setItem("icesniff.live.section", ui.activeSection);
   localStorage.setItem("icesniff.live.theme", ui.appTheme);
   localStorage.setItem("icesniff.live.font", ui.fontChoice);
+  localStorage.setItem("icesniff.live.fontScale", String(ui.fontScale));
   localStorage.setItem("icesniff.live.panelBackgrounds", ui.panelBackgrounds ? "1" : "0");
   localStorage.setItem("icesniff.live.navOpen", ui.navOpen ? "1" : "0");
   localStorage.setItem("icesniff.live.chat", ui.chatCollapsed ? "1" : "0");
@@ -89,6 +92,7 @@ function applyBodyClasses() {
   document.body.classList.add(`theme-${ui.appTheme}`);
   document.body.classList.add(`font-${ui.fontChoice}`);
   document.body.classList.toggle("panel-backgrounds-off", !ui.panelBackgrounds);
+  document.body.style.setProperty("--type-scale", String(ui.fontScale));
 }
 
 function setUIState(patch) {
@@ -155,10 +159,32 @@ async function api(pathname, options = {}) {
 }
 
 async function loadServerState() {
+  const preserveInteraction = activeInteractiveControlId();
   const payload = await api("/api/state");
-  Object.assign(ui, payload.state);
+  mergeServerState(payload.state);
   applyBodyClasses();
+  if (preserveInteraction) {
+    return;
+  }
   render();
+}
+
+function mergeServerState(nextState) {
+  const preferredInterface = ui.selectedCaptureInterface;
+  Object.assign(ui, nextState);
+
+  if (!Array.isArray(ui.availableCaptureInterfaces) || !ui.availableCaptureInterfaces.length) {
+    ui.availableCaptureInterfaces = ["en0"];
+  }
+
+  if (preferredInterface && ui.availableCaptureInterfaces.includes(preferredInterface)) {
+    ui.selectedCaptureInterface = preferredInterface;
+    return;
+  }
+
+  if (!ui.availableCaptureInterfaces.includes(ui.selectedCaptureInterface)) {
+    [ui.selectedCaptureInterface] = ui.availableCaptureInterfaces;
+  }
 }
 
 async function refreshAll() {
@@ -195,7 +221,7 @@ async function refreshAll() {
     }
 
     const { inspect, list, stats, conversations, streams, transactions, state } = payload;
-    Object.assign(ui, state);
+    mergeServerState(state);
     ui.schemaVersion = inspect.schema_version || "";
     ui.captureFormat = inspect.format || "";
     ui.packetCountHint = inspect.packet_count_hint || 0;
@@ -238,6 +264,29 @@ async function loadPacket(index) {
   }
 }
 
+async function openPacketPreview(index) {
+  const summary = ui.packets.find((packet) => packet.index === index) || null;
+
+  try {
+    const payload = await api(`/api/packet/${index}`);
+    ui.selectedPacketIndex = index;
+    ui.packetJSON = JSON.stringify(payload.packet, null, 2);
+    ui.packetPreview = {
+      index,
+      summary,
+      packetJSON: ui.packetJSON
+    };
+    render();
+  } catch (error) {
+    ui.packetPreview = {
+      index,
+      summary,
+      packetJSON: `Request failed: ${error.message}`
+    };
+    render();
+  }
+}
+
 async function uploadCapture(file) {
   ui.statusMessage = `Uploading ${file.name}...`;
   render();
@@ -254,7 +303,7 @@ async function uploadCapture(file) {
   if (!response.ok || !payload.ok) {
     throw new Error(payload.message || "Upload failed.");
   }
-  Object.assign(ui, payload.state);
+  mergeServerState(payload.state);
   await refreshAll();
 }
 
@@ -262,14 +311,14 @@ async function toggleCapture() {
   try {
     if (ui.isSniffing) {
       const payload = await api("/api/capture/stop", { method: "POST", body: JSON.stringify({}) });
-      Object.assign(ui, payload.state);
+      mergeServerState(payload.state);
       await refreshAll();
     } else {
       const payload = await api("/api/capture/start", {
         method: "POST",
         body: JSON.stringify({ interface: ui.selectedCaptureInterface })
       });
-      Object.assign(ui, payload.state);
+      mergeServerState(payload.state);
     }
     render();
   } catch (error) {
@@ -304,6 +353,23 @@ async function downloadCapture() {
   }
 }
 
+async function setCaptureInterface(nextInterface) {
+  const previousInterface = ui.selectedCaptureInterface;
+  ui.selectedCaptureInterface = nextInterface;
+
+  try {
+    const payload = await api("/api/capture/interface", {
+      method: "POST",
+      body: JSON.stringify({ interface: nextInterface })
+    });
+    mergeServerState(payload.state);
+  } catch (error) {
+    ui.selectedCaptureInterface = previousInterface;
+    ui.statusMessage = error.message;
+    render();
+  }
+}
+
 function scheduleRefresh() {
   window.clearTimeout(refreshTimer);
   refreshTimer = window.setTimeout(() => {
@@ -324,6 +390,14 @@ function startPolling() {
       render();
     }
   }, 1200);
+}
+
+function activeInteractiveControlId() {
+  const activeId = document.activeElement?.id || "";
+  if (activeId === "filter-input" || activeId === "capture-interface") {
+    return activeId;
+  }
+  return null;
 }
 
 function currentAppIconPath() {
@@ -416,27 +490,48 @@ function liquidPanel(title, body, extraClass = "") {
   `;
 }
 
+function animatedLabelText(text) {
+  return text
+    .split("")
+    .map((char) => `<span>${char === " " ? "&nbsp;" : escapeHTML(char)}</span>`)
+    .join("");
+}
+
 function renderPacketsSection() {
   return `
     <div class="section-root packets-root">
       <div class="packets-top-row">
-        <section class="surface-panel utility-panel">
-          <div class="panel-title">Filter</div>
-          <input id="filter-input" class="field-input mono" placeholder="protocol &amp; port" value="${escapeAttribute(ui.filterExpression)}">
+        <section class="surface-panel utility-panel capture-select-panel">
+          <div class="capture-select-wrap">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="xMidYMid meet"
+              class="capture-select-icon"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M60.7,53.6,50,64.3m0,0L39.3,53.6M50,64.3V35.7m0,46.4A32.1,32.1,0,1,1,82.1,50,32.1,32.1,0,0,1,50,82.1Z"></path>
+            </svg>
+            <select id="capture-interface" class="capture-interface-select mono" aria-label="Network interface">
+              ${ui.availableCaptureInterfaces.map((value) => {
+                const selected = value === ui.selectedCaptureInterface;
+                const label = selected ? `network interface - ${value}` : value;
+                return `<option value="${escapeAttribute(value)}" ${selected ? "selected" : ""}>${escapeHTML(label)}</option>`;
+              }).join("")}
+            </select>
+          </div>
         </section>
 
         <section class="surface-panel utility-panel">
-          <div class="capture-header-row">
-            <div>
-              <div class="panel-title">Capture</div>
-              <div class="capture-subtitle">${escapeHTML(ui.captureBackendMessage)}</div>
-            </div>
-            <div class="capture-state-pill ${ui.isSniffing ? "running" : "idle"}">${statusLabel()}</div>
+          <div class="packet-filter-control">
+            <input id="filter-input" class="packet-filter-input mono" type="text" placeholder=" " value="${escapeAttribute(ui.filterExpression)}">
+            <label for="filter-input" class="packet-filter-label">${animatedLabelText("protocol & port")}</label>
           </div>
-          <select id="capture-interface" class="select">
-            ${ui.availableCaptureInterfaces.map((value) => `<option value="${escapeAttribute(value)}" ${value === ui.selectedCaptureInterface ? "selected" : ""}>${escapeHTML(value)}</option>`).join("")}
-          </select>
-          <div class="capture-actions">
+        </section>
+
+        <section class="surface-panel utility-panel capture-actions-panel">
+          <div class="capture-actions capture-actions-inline">
             <label class="neo-toggle-container ${ui.isCaptureTransitioning ? "disabled" : ""}">
               <input id="toggle-capture" class="neo-toggle-input" type="checkbox" ${ui.isSniffing ? "checked" : ""} ${ui.isCaptureTransitioning ? "disabled" : ""}>
               <span class="neo-toggle">
@@ -477,12 +572,11 @@ function renderPacketsSection() {
                 <span class="neo-value-text">${ui.isSniffing ? "Running" : "Standby"}</span>
               </span>
             </label>
-            <button id="save-capture" class="action_has has_saved" type="button" aria-label="Save Capture" title="Save Capture" ${ui.capturePath ? "" : "disabled"}>
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path data-path="box" d="M5 4.5h11l3 3v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2z"></path>
-                <path data-path="line-top" d="M8 4.5h7"></path>
-                <path data-path="line-bottom" d="M17 20 L17 13 L7 13 L7 20"></path>
+            <button id="save-capture" class="Btn save-capture-button" type="button" aria-label="Save Capture" title="Save Capture" ${ui.capturePath ? "" : "disabled"}>
+              <svg class="svgIcon" viewBox="0 0 384 512" aria-hidden="true" focusable="false">
+                <path d="M169.4 470.6c12.5 12.5 32.8 12.5 45.3 0l128-128c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L224 370.7V32c0-17.7-14.3-32-32-32s-32 14.3-32 32v338.7l-73.4-73.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l128 128z"></path>
               </svg>
+              <span class="icon2" aria-hidden="true"></span>
             </button>
           </div>
         </section>
@@ -507,6 +601,80 @@ function renderPacketsSection() {
       </div>
     </div>
   `;
+}
+
+function renderPacketPreviewModal() {
+  if (!ui.packetPreview) {
+    return "";
+  }
+
+  const { index, summary, packetJSON } = ui.packetPreview;
+  const protocol = (summary?.protocol || "").toUpperCase();
+  const route = `${summary?.source || ""} -> ${summary?.destination || ""}`;
+
+  return `
+    <div class="packet-preview-backdrop" id="packet-preview-backdrop">
+      <section class="packet-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="packet-preview-title">
+        <div class="packet-preview-header">
+          <div>
+            <div id="packet-preview-title" class="packet-preview-title">Packet #${escapeHTML(index)}</div>
+            <div class="packet-preview-route mono">${escapeHTML(route)}</div>
+          </div>
+          <button id="close-packet-preview" class="header-icon-button packet-preview-close" type="button" aria-label="Close packet preview">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M7 7l10 10"></path>
+              <path d="M17 7 7 17"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="packet-preview-meta">
+          <span class="protocol-pill">${escapeHTML(protocol)}</span>
+          <span class="packet-preview-chip mono">${escapeHTML(`${summary?.timestamp_seconds ?? ""}.${summary?.timestamp_fraction ?? ""}`)}</span>
+        </div>
+        <div class="packet-preview-info">${escapeHTML(summary?.info || "No packet summary available.")}</div>
+        <pre class="packet-preview-json">${escapeHTML(packetJSON)}</pre>
+      </section>
+    </div>
+  `;
+}
+
+function captureControlSnapshot() {
+  const activeElement = document.activeElement;
+  if (!activeElement) {
+    return null;
+  }
+
+  if (activeElement.id === "filter-input") {
+    return {
+      id: "filter-input",
+      selectionStart: activeElement.selectionStart,
+      selectionEnd: activeElement.selectionEnd
+    };
+  }
+
+  if (activeElement.id === "capture-interface") {
+    return {
+      id: "capture-interface"
+    };
+  }
+
+  return null;
+}
+
+function restoreControlSnapshot(snapshot) {
+  if (!snapshot) {
+    return;
+  }
+
+  const element = app.querySelector(`#${snapshot.id}`);
+  if (!element) {
+    return;
+  }
+
+  element.focus();
+  if (snapshot.id === "filter-input" && typeof snapshot.selectionStart === "number" && typeof snapshot.selectionEnd === "number") {
+    element.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
+  }
 }
 
 function renderGenericSection(title, rows, type) {
@@ -545,6 +713,11 @@ function renderSettingsSection() {
   const themes = [
     ["defaultDark", "Default Dark"],
     ["defaultLight", "Default Light"],
+    ["catppuccin", "Catppuccin"],
+    ["oneDark", "One Dark"],
+    ["tokyoNight", "Tokyo Night"],
+    ["nord", "Nord"],
+    ["gruvbox", "Gruvbox"],
     ["ocean", "Ocean"],
     ["ember", "Ember"],
     ["forest", "Forest"]
@@ -552,14 +725,12 @@ function renderSettingsSection() {
   const fonts = [
     ["rounded", "Rounded"],
     ["system", "System"],
+    ["spaceGrotesk", "Space Grotesk"],
+    ["manrope", "Manrope"],
+    ["plexSans", "IBM Plex Sans"],
     ["serif", "Serif"],
     ["monospaced", "Monospaced"]
   ];
-  const panelBackgroundOptions = [
-    ["on", "On"],
-    ["off", "Off"]
-  ];
-
   return `
     <div class="section-root single-panel-root">
       <section class="liquid-panel settings-panel">
@@ -581,19 +752,19 @@ function renderSettingsSection() {
 
         <div class="settings-block">
           <div class="settings-block-title">Font</div>
-          <div class="choice-pills-row">
+          <div class="font-settings-row">
+            <div class="choice-pills-row">
             ${fonts.map(([value, label]) => `<button class="choice-pill ${ui.fontChoice === value ? "active" : ""}" data-font-choice="${value}">${label}</button>`).join("")}
+            </div>
+            <div class="font-size-controls">
+              <button id="font-size-decrease" class="choice-pill font-size-button" type="button" ${ui.fontScale <= 0.9 ? "disabled" : ""}>A-</button>
+              <div class="font-size-chip">${Math.round(ui.fontScale * 100)}%</div>
+              <button id="font-size-increase" class="choice-pill font-size-button" type="button" ${ui.fontScale >= 1.3 ? "disabled" : ""}>A+</button>
+            </div>
           </div>
         </div>
 
-        <div class="settings-block">
-          <div class="settings-block-title">Panel Backgrounds</div>
-          <div class="choice-pills-row">
-            ${panelBackgroundOptions.map(([value, label]) => `<button class="choice-pill ${ui.panelBackgrounds === (value === "on") ? "active" : ""}" data-panel-backgrounds="${value}">${label}</button>`).join("")}
-          </div>
-        </div>
-
-        <div class="settings-note">The live web app uses the same Rust capture and analysis backend as the macOS app. Theme, font, and panel background style stay local to this browser.</div>
+        <div class="settings-note">The live web app uses the same Rust capture and analysis backend as the macOS app. Theme, font, and type scale stay local to this browser.</div>
       </section>
     </div>
   `;
@@ -636,14 +807,17 @@ function renderSectionSwitcher(items) {
 
 function renderHeaderOpenCaptureButton() {
   return `
-    <button id="open-capture-header" class="open-file" type="button">
-      <span>Open Capture</span>
-      <span class="file-wrapper" aria-hidden="true">
-        <svg viewBox="0 0 24 24" focusable="false">
-          <path d="M14 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z"></path>
-          <path d="M14 3.5v5h5"></path>
+    <button id="open-capture-header" class="upload-card-button" type="button">
+      <span class="upload-card-header">
+        <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+          <path d="M12 16V6"></path>
+          <path d="m8.5 9.5 3.5-3.5 3.5 3.5"></path>
+          <path d="M5 18.5h14"></path>
         </svg>
-        <span class="file-front"></span>
+        <span class="upload-card-copy">
+          <span class="upload-card-title">Open Capture</span>
+          <span class="upload-card-subtitle">Import a local file</span>
+        </span>
       </span>
     </button>
   `;
@@ -692,6 +866,7 @@ function renderChatPanel() {
 }
 
 function render() {
+  const controlSnapshot = captureControlSnapshot();
   const sections = [
     ["packets", "Packets", icons.packets],
     ["stats", "Stats", icons.stats],
@@ -754,10 +929,12 @@ function render() {
 
         ${renderChatPanel()}
       </div>
+      ${renderPacketPreviewModal()}
     </div>
   `;
 
   wireEvents();
+  restoreControlSnapshot(controlSnapshot);
 }
 
 function wireEvents() {
@@ -799,8 +976,7 @@ function wireEvents() {
   });
 
   app.querySelector("#capture-interface")?.addEventListener("change", (event) => {
-    ui.selectedCaptureInterface = event.target.value;
-    render();
+    setCaptureInterface(event.target.value);
   });
 
   app.querySelector("#toggle-capture")?.addEventListener("change", () => {
@@ -815,6 +991,23 @@ function wireEvents() {
     button.addEventListener("click", () => {
       loadPacket(Number(button.dataset.packetIndex));
     });
+
+    button.addEventListener("dblclick", () => {
+      openPacketPreview(Number(button.dataset.packetIndex));
+    });
+  });
+
+  app.querySelector("#close-packet-preview")?.addEventListener("click", () => {
+    ui.packetPreview = null;
+    render();
+  });
+
+  app.querySelector("#packet-preview-backdrop")?.addEventListener("click", (event) => {
+    if (event.target.id !== "packet-preview-backdrop") {
+      return;
+    }
+    ui.packetPreview = null;
+    render();
   });
 
   app.querySelectorAll("[data-theme-choice]").forEach((button) => {
@@ -829,10 +1022,12 @@ function wireEvents() {
     });
   });
 
-  app.querySelectorAll("[data-panel-backgrounds]").forEach((button) => {
-    button.addEventListener("click", () => {
-      setUIState({ panelBackgrounds: button.dataset.panelBackgrounds === "on" });
-    });
+  app.querySelector("#font-size-decrease")?.addEventListener("click", () => {
+    setUIState({ fontScale: Math.max(0.9, Number((ui.fontScale - 0.1).toFixed(2))) });
+  });
+
+  app.querySelector("#font-size-increase")?.addEventListener("click", () => {
+    setUIState({ fontScale: Math.min(1.3, Number((ui.fontScale + 0.1).toFixed(2))) });
   });
 }
 

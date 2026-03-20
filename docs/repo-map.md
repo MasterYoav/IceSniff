@@ -64,7 +64,7 @@ The first implemented slice is intentionally narrow:
 12. `apps/cli/crates/session-model` carries the report structures.
 13. `apps/cli/crates/output-formatters` renders text and JSON CLI output.
 14. `apps/macos` consumes its app-local Rust engine through CLI/helper boundaries and renders packet/detail/field/hex panes plus conversation/stream/transaction analysis tables, filtered export controls, and native live-capture controls.
-15. `apps/live` ships a browser-local shell with an overlay section rail, toggleable AI side panel, browser-local appearance preferences, and packets-view live-capture controls while talking to the same Rust analysis/capture backend through a local HTTP server that launches `icesniff-cli` and `icesniff-capture-helper`.
+15. `apps/live` ships a browser-local shell with an overlay section rail, toggleable AI side panel, browser-local appearance preferences for themes, fonts, and type scale, a packets view with live-capture interface selection plus start/stop and save controls, and a double-click packet preview modal while talking to the same Rust analysis/capture backend through a local HTTP server that launches `icesniff-cli` and `icesniff-capture-helper`.
 
 This reflects the current transition state. The intended long-term shape is app-local ownership, not continued growth of root-level shared code by default.
 

@@ -48,7 +48,7 @@ For tshark:
 - browser UI styled as a local web shell with:
   - a collapsible overlay section rail
   - a toggleable AI side panel
-  - browser-local theme, font, and panel-background preferences
+  - browser-local theme, font, and type-scale preferences
 - packet/live-capture surface
 - stats, conversations, streams, and transactions sections
 - upload existing capture files into a local temporary workspace
@@ -61,6 +61,7 @@ For tshark:
 - the section rail opens as an overlay inside the main workspace instead of resizing the primary content area
 - the section rail auto-closes after a section is selected
 - the main header owns the view title, the section-rail toggle, the shared open-capture action, and the AI-panel toggle
-- packets view keeps the filter and capture utilities in the top row and uses a toggle control for starting or stopping live capture
+- packets view keeps the filter, interface picker, and capture controls in the top row and uses a toggle control for starting or stopping live capture
 - packets view saves the current capture from the capture panel, while file import stays in the shared header action
-- theme, font, panel-background density, and panel visibility preferences are stored in browser-local state
+- packets can be previewed in a modal from the list with a double click
+- modern appearance presets, font family, and type scale preferences are stored in browser-local state
