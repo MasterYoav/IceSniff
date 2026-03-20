@@ -63,8 +63,15 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Wireshark runtime
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install --cask wireshark
+
       - name: Build macOS CLI bundle
         working-directory: apps/cli
+        env:
+          ICESNIFF_WIRESHARK_APP: /Applications/Wireshark.app
         run: sh ./scripts/package-cli-bundle.sh
 
       - name: Upload macOS bundle
