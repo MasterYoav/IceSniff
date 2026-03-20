@@ -1466,7 +1466,10 @@ impl CliApp {
 
 fn preferred_interface_index(interfaces: &[String]) -> Option<usize> {
     for preferred in ["en0", "eth0", "wlan0", "wlp0s20f3", "wlp2s0"] {
-        if let Some(index) = interfaces.iter().position(|interface| interface == preferred) {
+        if let Some(index) = interfaces
+            .iter()
+            .position(|interface| interface == preferred)
+        {
             return Some(index);
         }
     }

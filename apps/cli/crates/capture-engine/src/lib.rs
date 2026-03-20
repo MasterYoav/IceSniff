@@ -375,7 +375,10 @@ fn parse_capture_backend_name(value: &str) -> Option<CaptureBackend> {
 
 fn preferred_capture_interface(interfaces: &[CaptureInterface]) -> Option<&CaptureInterface> {
     for preferred in ["en0", "eth0", "wlan0", "wlp0s20f3", "wlp2s0"] {
-        if let Some(interface) = interfaces.iter().find(|interface| interface.name == preferred) {
+        if let Some(interface) = interfaces
+            .iter()
+            .find(|interface| interface.name == preferred)
+        {
             return Some(interface);
         }
     }
