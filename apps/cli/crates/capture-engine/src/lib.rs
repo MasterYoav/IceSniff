@@ -117,9 +117,9 @@ impl CaptureEngine {
     }
 
     pub fn default_interface(&self) -> Result<CaptureInterface, CaptureError> {
-        self.available_interfaces()?
-            .into_iter()
-            .next()
+        let interfaces = self.available_interfaces()?;
+        preferred_capture_interface(&interfaces)
+            .cloned()
             .ok_or(CaptureError::NoInterfacesAvailable)
     }
 
@@ -274,6 +274,12 @@ fn resolve_capture_tool_path() -> String {
         }
     }
 
+    for candidate in bundled_capture_tool_candidates() {
+        if tool_candidate_exists(&candidate) {
+            return candidate;
+        }
+    }
+
     for candidate in default_capture_tool_candidates() {
         if tool_candidate_exists(candidate) {
             return (*candidate).to_string();
@@ -281,6 +287,73 @@ fn resolve_capture_tool_path() -> String {
     }
 
     default_capture_tool_candidates()[0].to_string()
+}
+
+fn bundled_capture_tool_candidates() -> Vec<String> {
+    let mut candidates = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+
+    if let Ok(runtime_root) = env::var("ICESNIFF_RUNTIME_ROOT") {
+        push_runtime_candidates(Path::new(runtime_root.trim()), &mut candidates, &mut seen);
+    }
+
+    if let Ok(executable) = env::current_exe() {
+        if let Some(executable_dir) = executable.parent() {
+            push_runtime_candidates(executable_dir, &mut candidates, &mut seen);
+            push_runtime_candidates(&executable_dir.join("runtime"), &mut candidates, &mut seen);
+            push_runtime_candidates(
+                &executable_dir.join("..").join("runtime"),
+                &mut candidates,
+                &mut seen,
+            );
+        }
+    }
+
+    if let Ok(app_path) = env::var("ICESNIFF_WIRESHARK_APP") {
+        let trimmed = app_path.trim();
+        if !trimmed.is_empty() {
+            push_runtime_candidates(Path::new(trimmed), &mut candidates, &mut seen);
+        }
+    }
+
+    if let Ok(repo_root) = env::var("ICESNIFF_REPO_ROOT") {
+        let bundled_root = PathBuf::from(repo_root)
+            .join("apps")
+            .join("macos")
+            .join("Sources")
+            .join("IceSniffMac")
+            .join("Resources")
+            .join("BundledTShark")
+            .join("Wireshark.app");
+        push_runtime_candidates(&bundled_root, &mut candidates, &mut seen);
+    }
+
+    candidates
+}
+
+fn push_runtime_candidates(
+    root: &Path,
+    candidates: &mut Vec<String>,
+    seen: &mut std::collections::BTreeSet<String>,
+) {
+    let runtime_roots = [
+        root.to_path_buf(),
+        root.join("bin"),
+        root.join("wireshark"),
+        root.join("wireshark").join("bin"),
+        root.join("Wireshark.app"),
+        root.join("Contents").join("MacOS"),
+        root.join("Wireshark.app").join("Contents").join("MacOS"),
+    ];
+
+    for runtime_root in runtime_roots {
+        for tool in ["dumpcap", "dumpcap.exe", "tcpdump", "tcpdump.exe"] {
+            let candidate = runtime_root.join(tool).display().to_string();
+            if seen.insert(candidate.clone()) {
+                candidates.push(candidate);
+            }
+        }
+    }
 }
 
 fn resolve_capture_backend(tool_path: &str) -> CaptureBackend {
@@ -298,6 +371,13 @@ fn parse_capture_backend_name(value: &str) -> Option<CaptureBackend> {
         "dumpcap" => Some(CaptureBackend::Dumpcap),
         _ => None,
     }
+}
+
+fn preferred_capture_interface(interfaces: &[CaptureInterface]) -> Option<&CaptureInterface> {
+    interfaces
+        .iter()
+        .find(|interface| interface.name == "en0")
+        .or_else(|| interfaces.first())
 }
 
 fn infer_capture_backend_from_tool_path(tool_path: &str) -> CaptureBackend {
@@ -416,17 +496,25 @@ fn default_capture_tool_candidates() -> &'static [&'static str] {
     #[cfg(windows)]
     {
         &[
+            "dumpcap.exe",
+            "dumpcap",
             "windump.exe",
             "windump",
             "tcpdump.exe",
             "tcpdump",
-            "dumpcap.exe",
-            "dumpcap",
         ]
     }
     #[cfg(not(windows))]
     {
-        &["/usr/sbin/tcpdump", "tcpdump", "dumpcap"]
+        &[
+            "/Applications/Wireshark.app/Contents/MacOS/dumpcap",
+            "/opt/homebrew/bin/dumpcap",
+            "/usr/local/bin/dumpcap",
+            "/usr/bin/dumpcap",
+            "dumpcap",
+            "/usr/sbin/tcpdump",
+            "tcpdump",
+        ]
     }
 }
 
@@ -484,7 +572,8 @@ fn is_driver_error(message: &str) -> bool {
 mod tests {
     use super::{
         infer_capture_backend_from_tool_path, is_driver_error, is_permission_error,
-        parse_capture_backend_name, parse_capture_interface_line, CaptureBackend,
+        parse_capture_backend_name, parse_capture_interface_line, preferred_capture_interface,
+        CaptureBackend, CaptureInterface,
     };
 
     #[test]
@@ -562,5 +651,22 @@ mod tests {
             infer_capture_backend_from_tool_path("tcpdump"),
             CaptureBackend::TcpdumpStyle
         );
+    }
+
+    #[test]
+    fn prefers_en0_as_default_interface() {
+        let interfaces = vec![
+            CaptureInterface {
+                name: "lo0".to_string(),
+            },
+            CaptureInterface {
+                name: "en0".to_string(),
+            },
+            CaptureInterface {
+                name: "bridge0".to_string(),
+            },
+        ];
+        let preferred = preferred_capture_interface(&interfaces).expect("expected interface");
+        assert_eq!(preferred.name, "en0");
     }
 }

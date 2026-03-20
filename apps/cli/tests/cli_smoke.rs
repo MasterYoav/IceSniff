@@ -324,6 +324,7 @@ fn save_command_text_and_json_packets_written_match() {
 fn shell_command_runs_interactive_session() {
     let path = write_temp_capture("pcap", &wrap_pcap_packet(&sample_http_frame()));
     let mut child = Command::new(env!("CARGO_BIN_EXE_icesniff-cli"))
+        .arg("shell")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -355,6 +356,7 @@ fn shell_command_can_run_live_capture_without_open_file() {
     let capture_source = write_temp_capture("pcap", &wrap_pcap_packet(&sample_http_frame()));
     let tool_path = write_fake_capture_tool();
     let mut child = Command::new(env!("CARGO_BIN_EXE_icesniff-cli"))
+        .arg("shell")
         .env("ICESNIFF_CAPTURE_TOOL", &tool_path)
         .env("ICESNIFF_FAKE_CAPTURE_SOURCE", &capture_source)
         .stdin(Stdio::piped())
@@ -403,6 +405,7 @@ fn shell_capture_status_reports_exited_when_capture_process_stops() {
     let capture_source = write_temp_capture("pcap", &wrap_pcap_packet(&sample_http_frame()));
     let tool_path = write_fake_capture_tool_that_exits();
     let mut child = Command::new(env!("CARGO_BIN_EXE_icesniff-cli"))
+        .arg("shell")
         .env("ICESNIFF_CAPTURE_TOOL", &tool_path)
         .env("ICESNIFF_FAKE_CAPTURE_SOURCE", &capture_source)
         .stdin(Stdio::piped())

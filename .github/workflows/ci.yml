@@ -29,6 +29,11 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all --check
 
+      - name: Check installer script syntax
+        run: |
+          sh -n scripts/package-cli-bundle.sh
+          sh -n install/install.sh
+
       - name: Run tests
         run: cargo test --locked --workspace --lib --bins
 

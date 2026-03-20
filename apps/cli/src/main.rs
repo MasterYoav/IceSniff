@@ -1,3 +1,6 @@
+mod filter_input;
+mod tui;
+
 use std::env;
 use std::fmt;
 use std::io::{self, Write};
@@ -10,6 +13,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use crate::filter_input::normalize_filter_expression;
 use app_services::{
     CaptureError, CaptureStatsInput, CaptureStatsService, ConversationsInput, ConversationsService,
     InspectCaptureInput, InspectCaptureService, InspectPacketInput, InspectPacketService,
@@ -45,6 +49,7 @@ fn run() -> Result<(), CliError> {
             println!("{}", help_text());
             Ok(())
         }
+        Command::App { path } => tui::run_app(path).map_err(CliError::from),
         Command::EngineInfo => {
             let report = engine_info_report();
             match cli.output_mode {
@@ -234,6 +239,9 @@ enum OutputMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Command {
     Help,
+    App {
+        path: Option<PathBuf>,
+    },
     EngineInfo,
     Shell {
         path: Option<PathBuf>,
@@ -312,8 +320,16 @@ where
 
     let command = match command_name.as_deref() {
         Some("help") => Command::Help,
+        Some("app") => {
+            if remaining.len() > 1 {
+                return Err(usage("too many arguments for app"));
+            }
+            Command::App {
+                path: remaining.first().map(PathBuf::from),
+            }
+        }
         Some("engine-info") => Command::EngineInfo,
-        None => Command::Shell { path: None },
+        None => Command::App { path: None },
         Some("shell") => Command::Shell {
             path: remaining.first().map(PathBuf::from),
         },
@@ -478,7 +494,7 @@ fn parse_analysis_filter_args(
             let value = args
                 .get(index + 1)
                 .ok_or_else(|| usage("missing value for --filter"))?;
-            filter = Some(value.clone());
+            filter = normalize_filter_expression(value);
             index += 2;
             continue;
         }
@@ -507,6 +523,8 @@ IceSniff CLI
 
 Usage:
   icesniff-cli help
+  icesniff-cli [capture-file]
+  icesniff-cli app [capture-file]
   icesniff-cli [--json] engine-info
   icesniff-cli [--json] shell [capture-file]
   icesniff-cli [--json] save <source-capture-file> <output-capture-file> [--filter <expr>] [--stream-filter <expr>]
@@ -519,6 +537,7 @@ Usage:
   icesniff-cli [--json] transactions <capture-file> [--filter <expr>] [--transaction-filter <expr>]
 
 Commands:
+  app          Launch the full-screen IceSniff terminal app.
   engine-info  Print versioned engine capabilities for app clients.
   shell        Start an interactive IceSniff session with a current capture context.
   save         Write packet/stream-filtered capture output into a new PCAP file.
@@ -539,6 +558,9 @@ Flags:
 Error codes:
   [ISCLI_USAGE]   Exit status 2 for command/argument usage errors.
   [ISCLI_RUNTIME] Exit status 1 for runtime/service failures.
+
+Notes:
+  Running `icesniff-cli` with no command launches the interactive terminal app.
 "
 }
 
@@ -1233,14 +1255,30 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn defaults_to_shell_when_no_command_is_given() {
-        let cli = parse_cli(Vec::<String>::new()).expect("expected shell command");
+    fn defaults_to_app_when_no_command_is_given() {
+        let cli = parse_cli(Vec::<String>::new()).expect("expected app command");
 
         assert_eq!(
             cli,
             Cli {
                 output_mode: OutputMode::Text,
-                command: Command::Shell { path: None },
+                command: Command::App { path: None },
+            }
+        );
+    }
+
+    #[test]
+    fn parses_app_command_with_initial_capture() {
+        let cli = parse_cli(["app".to_string(), "sample.pcap".to_string()])
+            .expect("expected app command");
+
+        assert_eq!(
+            cli,
+            Cli {
+                output_mode: OutputMode::Text,
+                command: Command::App {
+                    path: Some(PathBuf::from("sample.pcap")),
+                },
             }
         );
     }

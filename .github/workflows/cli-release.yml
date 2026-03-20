@@ -1,0 +1,136 @@
+name: CLI Release Bundles
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create or update"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Prepare Release Metadata
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+    steps:
+      - name: Resolve release tag
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+
+          if [ -z "$tag" ]; then
+            echo "Release tag is required." >&2
+            exit 1
+          fi
+
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+
+  create-release:
+    name: Create Or Update Release
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+    steps:
+      - name: Create release container
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+
+  bundle-macos:
+    name: Bundle CLI (macOS)
+    runs-on: macos-15
+    needs:
+      - prepare
+      - create-release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build macOS CLI bundle
+        working-directory: apps/cli
+        run: ./scripts/package-cli-bundle.sh
+
+      - name: Upload macOS bundle
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          files: apps/cli/dist/*.tar.gz
+          fail_on_unmatched_files: true
+
+  bundle-linux:
+    name: Bundle CLI (Linux)
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+      - create-release
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install runtime packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tshark wireshark-common libpcap-dev pkg-config
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Linux CLI bundle
+        working-directory: apps/cli
+        run: ./scripts/package-cli-bundle.sh
+
+      - name: Upload Linux bundle
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          files: apps/cli/dist/*.tar.gz
+          fail_on_unmatched_files: true
+
+  bundle-windows:
+    name: Bundle CLI (Windows)
+    runs-on: windows-latest
+    needs:
+      - prepare
+      - create-release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Wireshark runtime
+        shell: pwsh
+        run: |
+          winget install --id WiresharkFoundation.Wireshark --exact --silent --accept-package-agreements --accept-source-agreements
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Windows CLI bundle
+        shell: pwsh
+        working-directory: apps/cli
+        run: .\scripts\package-cli-bundle.ps1
+
+      - name: Upload Windows bundle
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          files: apps/cli/dist/*.zip
+          fail_on_unmatched_files: true

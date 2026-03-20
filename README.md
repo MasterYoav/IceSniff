@@ -113,6 +113,16 @@ cargo run -p icesniff-cli -- streams path/to/capture.pcap
 cargo run -p icesniff-cli -- transactions path/to/capture.pcap
 ```
 
+One-line installers:
+
+- macOS (Apple Silicon) / Linux (x86_64):
+  `curl -fsSL https://raw.githubusercontent.com/MasterYoav/IceSniff/main/install.sh | sh`
+- Windows (x86_64):
+  `irm https://raw.githubusercontent.com/MasterYoav/IceSniff/main/install.ps1 | iex`
+
+The release bundles install a launcher plus a private bundled Wireshark runtime for
+`dumpcap`-backed live capture. See `docs/cli/install.md` for the exact bundle layout and release workflow.
+
 ### macOS App
 
 ```bash
@@ -135,6 +145,7 @@ Then open `http://127.0.0.1:4318`.
 - `CONTRIBUTING.md` for contribution rules and local workflows
 - `docs/architecture/overview.md` for architecture notes
 - `docs/feature-parity-matrix.md` for cross-surface tracking
+- `docs/cli/install.md` for CLI bundle and installer commands
 - `docs/repo-map.md` for repository structure
 - `apps/macos/README.md` for macOS-specific setup
 - `apps/live/README.md` for the local web app
