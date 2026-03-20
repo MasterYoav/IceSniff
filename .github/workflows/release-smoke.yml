@@ -14,12 +14,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
 
+      - name: Install Wireshark.app
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install --cask wireshark
+
+      - name: Download matching Wireshark source archive
+        run: |
+          set -euo pipefail
+          version="$(sed -E 's/.*Wireshark\) ([0-9]+\.[0-9]+\.[0-9]+).*/\1/' Sources/IceSniffMac/Resources/BundledTShark/WIRESHARK_VERSION.txt)"
+          archive="wireshark-${version}.tar.xz"
+          archive_path="$PWD/build/release/$archive"
+          mkdir -p "$PWD/build/release"
+          curl -fL "https://www.wireshark.org/download/src/all-versions/$archive" -o "$archive_path"
+          echo "ICESNIFF_WIRESHARK_SOURCE_ARCHIVE=$archive_path" >> "$GITHUB_ENV"
+
       - name: Build unsigned release package
+        env:
+          ICESNIFF_ALLOW_MISSING_SUPABASE_CONFIG: "1"
         run: ./scripts/release-macos.sh
 
       - name: Upload release artifacts
