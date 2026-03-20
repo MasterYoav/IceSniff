@@ -1001,11 +1001,7 @@ impl CliApp {
                             .iter()
                             .position(|interface| interface == &selected)
                     })
-                    .or_else(|| {
-                        self.available_interfaces
-                            .iter()
-                            .position(|interface| interface == "en0")
-                    })
+                    .or_else(|| preferred_interface_index(&self.available_interfaces))
                     .unwrap_or(0);
             }
             Err(error) => {
@@ -1466,6 +1462,21 @@ impl CliApp {
                 "No packet selected.\n\nMove through the list with j/k or arrow keys.".to_string()
             })
     }
+}
+
+fn preferred_interface_index(interfaces: &[String]) -> Option<usize> {
+    for preferred in ["en0", "eth0", "wlan0", "wlp0s20f3", "wlp2s0"] {
+        if let Some(index) = interfaces.iter().position(|interface| interface == preferred) {
+            return Some(index);
+        }
+    }
+
+    interfaces.iter().position(|interface| {
+        !matches!(
+            interface.as_str(),
+            "any" | "lo" | "lo0" | "Loopback" | "Npcap Loopback Adapter"
+        )
+    })
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {

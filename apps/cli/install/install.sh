@@ -40,6 +40,39 @@ ensure_shell_path() {
   fi
 }
 
+configure_linux_capture_permissions() {
+  dumpcap_path="$1"
+
+  if [ ! -f "$dumpcap_path" ]; then
+    return
+  fi
+
+  if ! command -v setcap >/dev/null 2>&1; then
+    printf '\nWarning: setcap is not available, so live capture may still require manual setup.\n'
+    return
+  fi
+
+  printf '\nConfiguring Linux capture permissions for bundled dumpcap...\n'
+  if [ "$(id -u)" -eq 0 ]; then
+    if setcap cap_net_admin,cap_net_raw=eip "$dumpcap_path" 2>/dev/null; then
+      printf 'Capture permissions configured.\n'
+    else
+      printf 'Warning: failed to set capture capabilities on bundled dumpcap.\n'
+    fi
+    return
+  fi
+
+  if command -v sudo >/dev/null 2>&1; then
+    if sudo setcap cap_net_admin,cap_net_raw=eip "$dumpcap_path"; then
+      printf 'Capture permissions configured.\n'
+    else
+      printf 'Warning: failed to set capture capabilities on bundled dumpcap.\n'
+    fi
+  else
+    printf 'Warning: sudo is not available, so live capture may still require manual setup.\n'
+  fi
+}
+
 write_launcher() {
   launcher_path="$1"
   target_dir="$2"
@@ -128,6 +161,10 @@ fi
 rm -rf "$target_dir"
 mkdir -p "$target_dir"
 tar -xzf "$archive" -C "$target_dir" --strip-components=1
+
+if [ "$platform" = "linux" ]; then
+  configure_linux_capture_permissions "$target_dir/runtime/wireshark/bin/dumpcap"
+fi
 
 write_launcher "$BIN_ROOT/icesniff-cli" "$target_dir"
 ln -sfn "icesniff-cli" "$BIN_ROOT/icesniff"
