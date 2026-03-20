@@ -875,7 +875,7 @@ impl CliApp {
             }
             KeyCode::Char('i') => self.cycle_interface(1),
             KeyCode::Char('I') => self.cycle_interface(-1),
-            KeyCode::Char('c') => self.toggle_capture()?,
+            KeyCode::Char('c') => self.toggle_capture(),
             KeyCode::Char('r') => {
                 self.refresh_interfaces();
                 self.refresh_visible_section();
@@ -1307,12 +1307,18 @@ impl CliApp {
         ));
     }
 
-    fn toggle_capture(&mut self) -> Result<(), String> {
+    fn toggle_capture(&mut self) {
         if self.active_capture.is_some() {
             let Some(session) = self.active_capture.take() else {
-                return Ok(());
+                return;
             };
-            let stopped_path = session.stop().map_err(render_capture_error)?;
+            let stopped_path = match session.stop() {
+                Ok(path) => path,
+                Err(error) => {
+                    self.status = StatusMessage::error(render_capture_error(error));
+                    return;
+                }
+            };
             self.current_path = Some(stopped_path.clone());
             self.capture_state_label = "idle".to_string();
             self.invalidate_cached_reports();
@@ -1321,18 +1327,28 @@ impl CliApp {
                 "Live capture stopped and opened from {}.",
                 stopped_path.display()
             ));
-            return Ok(());
+            return;
         }
 
         self.refresh_interfaces();
         let interface = self
             .available_interfaces
             .get(self.selected_interface)
-            .cloned();
+            .and_then(|value| {
+                if value == "default" {
+                    None
+                } else {
+                    Some(value.clone())
+                }
+            });
         let coordinator = LiveCaptureCoordinator::default();
-        let session = coordinator
-            .start(StartLiveCaptureInput { interface })
-            .map_err(render_capture_error)?;
+        let session = match coordinator.start(StartLiveCaptureInput { interface }) {
+            Ok(session) => session,
+            Err(error) => {
+                self.status = StatusMessage::error(render_capture_error(error));
+                return;
+            }
+        };
         let capture_path = session.path().to_path_buf();
         let capture_interface = session.interface().to_string();
         self.current_path = Some(capture_path);
@@ -1343,7 +1359,6 @@ impl CliApp {
         self.last_live_refresh = Instant::now();
         self.status =
             StatusMessage::info(format!("Live capture started on {}.", capture_interface));
-        Ok(())
     }
 
     fn on_tick(&mut self) {

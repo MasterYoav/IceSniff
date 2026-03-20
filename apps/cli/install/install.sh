@@ -6,6 +6,40 @@ INSTALL_ROOT="${ICESNIFF_INSTALL_ROOT:-$HOME/.local/share/icesniff-cli}"
 BIN_ROOT="${ICESNIFF_INSTALL_BIN:-$HOME/.local/bin}"
 VERSION="${ICESNIFF_INSTALL_VERSION:-latest}"
 
+append_path_line() {
+  profile_path="$1"
+  path_line="$2"
+
+  if [ -f "$profile_path" ] && grep -F "$path_line" "$profile_path" >/dev/null 2>&1; then
+    return
+  fi
+
+  if [ ! -f "$profile_path" ]; then
+    mkdir -p "$(dirname "$profile_path")"
+    : > "$profile_path"
+  fi
+
+  {
+    printf '\n# Added by IceSniff CLI installer\n'
+    printf '%s\n' "$path_line"
+  } >> "$profile_path"
+}
+
+ensure_shell_path() {
+  path_line="export PATH=\"$BIN_ROOT:\$PATH\""
+
+  append_path_line "$HOME/.profile" "$path_line"
+
+  if [ -n "${BASH_VERSION:-}" ] || [ -f "$HOME/.bashrc" ] || [ "${SHELL:-}" = "/bin/bash" ]; then
+    append_path_line "$HOME/.bashrc" "$path_line"
+  fi
+
+  if [ -n "${ZSH_VERSION:-}" ] || [ -f "$HOME/.zshrc" ] || [ "${SHELL:-}" = "/bin/zsh" ]; then
+    append_path_line "$HOME/.zshrc" "$path_line"
+    append_path_line "$HOME/.zprofile" "$path_line"
+  fi
+}
+
 detect_os() {
   case "$(uname -s)" in
     Darwin) printf '%s' "macos" ;;
@@ -61,15 +95,17 @@ mkdir -p "$target_dir"
 tar -xzf "$archive" -C "$target_dir" --strip-components=1
 
 ln -sfn "$target_dir/bin/icesniff-cli" "$BIN_ROOT/icesniff-cli"
-ln -sfn "$target_dir/bin/icesniff-cli" "$BIN_ROOT/icesniff"
+ln -sfn "$target_dir/bin/icesniff" "$BIN_ROOT/icesniff"
+
+ensure_shell_path
 
 printf '\nInstalled IceSniff CLI %s to %s\n' "$tag" "$target_dir"
 printf 'Launcher: %s/icesniff-cli\n' "$BIN_ROOT"
+printf 'Alias: %s/icesniff\n' "$BIN_ROOT"
 
 case ":$PATH:" in
   *":$BIN_ROOT:"*) ;;
   *)
-    printf '\nAdd this to your shell profile if needed:\n'
-    printf '  export PATH="%s:$PATH"\n' "$BIN_ROOT"
+    printf '\nPATH was added to your shell startup files. Open a new terminal window if needed.\n'
     ;;
 esac

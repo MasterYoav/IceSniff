@@ -2,8 +2,9 @@ $ErrorActionPreference = "Stop"
 
 $repo = if ($env:ICESNIFF_INSTALL_REPO) { $env:ICESNIFF_INSTALL_REPO } else { "MasterYoav/IceSniff" }
 $version = if ($env:ICESNIFF_INSTALL_VERSION) { $env:ICESNIFF_INSTALL_VERSION } else { "latest" }
-$installRoot = if ($env:ICESNIFF_INSTALL_ROOT) { $env:ICESNIFF_INSTALL_ROOT } else { Join-Path $env:LOCALAPPDATA "IceSniff\cli" }
-$binRoot = if ($env:ICESNIFF_INSTALL_BIN) { $env:ICESNIFF_INSTALL_BIN } else { Join-Path $env:LOCALAPPDATA "IceSniff\bin" }
+$programRoot = Join-Path $env:LOCALAPPDATA "Programs\IceSniff"
+$installRoot = if ($env:ICESNIFF_INSTALL_ROOT) { $env:ICESNIFF_INSTALL_ROOT } else { Join-Path $programRoot "cli" }
+$binRoot = if ($env:ICESNIFF_INSTALL_BIN) { $env:ICESNIFF_INSTALL_BIN } else { Join-Path $programRoot "bin" }
 
 function Get-Arch {
     switch ($env:PROCESSOR_ARCHITECTURE.ToLowerInvariant()) {
@@ -40,15 +41,20 @@ function Ensure-UserPathContains([string]$PathEntry) {
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if (-not $userPath) {
         [Environment]::SetEnvironmentVariable("Path", $PathEntry, "User")
+        $env:Path = "$PathEntry;$env:Path"
         return
     }
 
     $parts = $userPath.Split(';') | Where-Object { $_ }
     if ($parts -contains $PathEntry) {
+        if (-not (($env:Path.Split(';') | Where-Object { $_ }) -contains $PathEntry)) {
+            $env:Path = "$PathEntry;$env:Path"
+        }
         return
     }
 
     [Environment]::SetEnvironmentVariable("Path", "$userPath;$PathEntry", "User")
+    $env:Path = "$PathEntry;$env:Path"
 }
 
 $arch = Get-Arch
@@ -105,4 +111,5 @@ try {
 Write-Host ""
 Write-Host "Installed IceSniff CLI $tag to $targetDir"
 Write-Host "Launcher: $binRoot\icesniff-cli.cmd"
-Write-Host "Open a new PowerShell window if the command is not available immediately."
+Write-Host "Alias: $binRoot\icesniff.cmd"
+Write-Host "The command is available in new terminal windows as: icesniff-cli"
