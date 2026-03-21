@@ -37,6 +37,7 @@ BUILD_DIR=""
 EXECUTABLE_PATH=""
 RESOURCE_BUNDLE_PATH=""
 INSTALLER_SIGNING_IDENTITY="${ICESNIFF_INSTALLER_SIGNING_IDENTITY:-}"
+BUNDLED_CLI_SOURCE_DIR="$APP_ROOT/Sources/IceSniffMac/Resources/BundledCLI"
 
 env_file_value() {
   local key="$1"
@@ -104,6 +105,16 @@ assemble_app_bundle() {
   ditto "$EXECUTABLE_PATH" "$MACOS_PATH/$APP_NAME"
   chmod +x "$MACOS_PATH/$APP_NAME"
   ditto "$RESOURCE_BUNDLE_PATH" "$RESOURCES_PATH/$RESOURCE_BUNDLE_NAME"
+
+  mkdir -p "$RESOURCES_PATH/BundledCLI"
+  if [[ -x "$BUNDLED_CLI_SOURCE_DIR/icesniff-cli" ]]; then
+    ditto "$BUNDLED_CLI_SOURCE_DIR/icesniff-cli" "$RESOURCES_PATH/BundledCLI/icesniff-cli"
+    chmod +x "$RESOURCES_PATH/BundledCLI/icesniff-cli"
+  fi
+  if [[ -x "$BUNDLED_CLI_SOURCE_DIR/icesniff-capture-helper" ]]; then
+    ditto "$BUNDLED_CLI_SOURCE_DIR/icesniff-capture-helper" "$RESOURCES_PATH/BundledCLI/icesniff-capture-helper"
+    chmod +x "$RESOURCES_PATH/BundledCLI/icesniff-capture-helper"
+  fi
 
   cat > "$INFO_PLIST_PATH" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
