@@ -1299,9 +1299,13 @@ struct LiveCaptureBridge {
             candidates.append(targetRoot.appendingPathComponent("release/icesniff-capture-helper"))
         }
 
-        if let bundled = Bundle.module.resourceURL?.appendingPathComponent("BundledCLI/icesniff-capture-helper") {
-            candidates.append(bundled)
-        }
+        let bundledCandidates: [URL?] = [
+            Bundle.main.url(forResource: "icesniff-capture-helper", withExtension: nil, subdirectory: "BundledCLI"),
+            Bundle.module.url(forResource: "icesniff-capture-helper", withExtension: nil, subdirectory: "BundledCLI"),
+            Bundle.main.resourceURL?.appendingPathComponent("BundledCLI/icesniff-capture-helper"),
+            Bundle.module.resourceURL?.appendingPathComponent("BundledCLI/icesniff-capture-helper")
+        ]
+        candidates.append(contentsOf: bundledCandidates.compactMap { $0 })
 
         return candidates
     }
