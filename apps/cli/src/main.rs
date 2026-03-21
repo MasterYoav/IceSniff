@@ -1,3 +1,4 @@
+mod capture_permissions;
 mod filter_input;
 mod launcher;
 mod logo;
@@ -23,7 +24,6 @@ use app_services::{
     SaveCaptureInput, SaveCaptureService, StartLiveCaptureInput, StreamsInput, StreamsService,
     TransactionsInput, TransactionsService,
 };
-use capture_engine::CaptureEngine;
 use output_formatters::{
     render_capture_report, render_capture_report_json, render_capture_stats_report,
     render_capture_stats_report_json, render_conversation_report, render_conversation_report_json,
@@ -680,6 +680,8 @@ fn run_capture_start(
     output: PathBuf,
     stop_file: Option<PathBuf>,
 ) -> Result<(), String> {
+    capture_permissions::ensure_capture_privileges_installed()?;
+
     let should_stop = Arc::new(AtomicBool::new(false));
     let signal_stop = Arc::clone(&should_stop);
     ctrlc::set_handler(move || {
@@ -687,19 +689,21 @@ fn run_capture_start(
     })
     .map_err(|error| format!("failed to install signal handler: {error}"))?;
 
-    let engine = CaptureEngine::default();
-    let interface = match interface {
-        Some(interface) => interface,
-        None => {
-            engine
-                .default_interface()
-                .map_err(render_capture_error)?
-                .name
-        }
-    };
-    let mut session = engine
-        .start_capture(&interface, output.clone())
+    let coordinator = LiveCaptureCoordinator::default();
+    let mut session = coordinator
+        .start(StartLiveCaptureInput {
+            interface: interface.clone(),
+        })
         .map_err(render_capture_error)?;
+
+    let session_path = session.path().to_path_buf();
+    if session_path != output {
+        return Err(format!(
+            "capture runtime produced {}, expected {}",
+            session_path.display(),
+            output.display()
+        ));
+    }
 
     println!("ready {}", output.display());
 

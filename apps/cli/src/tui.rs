@@ -33,7 +33,10 @@ use session_model::{
     StreamReport, TransactionReport,
 };
 
-use crate::{engine_info_report, filter_input::normalize_filter_expression, render_capture_error};
+use crate::{
+    capture_permissions, engine_info_report, filter_input::normalize_filter_expression,
+    render_capture_error,
+};
 
 const REFRESH_TICK: Duration = Duration::from_millis(125);
 const LIVE_REFRESH_INTERVAL: Duration = Duration::from_millis(900);
@@ -269,6 +272,19 @@ impl CliApp {
 
     fn current_filter(&self) -> Option<String> {
         normalize_filter_expression(&self.filter)
+    }
+
+    fn is_live_capture_warming_up_error(&self, error: &str) -> bool {
+        if self.active_capture.is_none() {
+            return false;
+        }
+
+        let normalized = error.to_ascii_lowercase();
+        normalized.contains("failed to read capture file")
+            || normalized.contains("no such file or directory")
+            || normalized.contains("cannot read an unknown capture container")
+            || normalized.contains("shorter than the global header")
+            || normalized.contains("pcapng file is shorter")
     }
 
     fn render(&mut self, frame: &mut Frame<'_>) {
@@ -637,15 +653,17 @@ impl CliApp {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_else(|| {
-                vec![ListItem::new(vec![
-                    Line::from(Span::styled(
+                let (title, subtitle) = if self.active_capture.is_some() {
+                    ("Waiting for first packet...", "Live capture is running.")
+                } else {
+                    (
                         "No packet list available.",
-                        Style::default().fg(Color::Gray),
-                    )),
-                    Line::from(Span::styled(
                         "Open a capture or start a live session.",
-                        Style::default().fg(Color::DarkGray),
-                    )),
+                    )
+                };
+                vec![ListItem::new(vec![
+                    Line::from(Span::styled(title, Style::default().fg(Color::Gray))),
+                    Line::from(Span::styled(subtitle, Style::default().fg(Color::DarkGray))),
                 ])]
             });
 
@@ -1033,7 +1051,13 @@ impl CliApp {
 
         match InspectCaptureService::default().inspect(InspectCaptureInput { path }) {
             Ok(report) => self.capture_summary = Some(report),
-            Err(error) => self.status = StatusMessage::error(error),
+            Err(error) => {
+                if self.is_live_capture_warming_up_error(&error) {
+                    self.capture_summary = None;
+                    return;
+                }
+                self.status = StatusMessage::error(error);
+            }
         }
     }
 
@@ -1068,6 +1092,11 @@ impl CliApp {
                 self.refresh_packet_detail();
             }
             Err(error) => {
+                if self.is_live_capture_warming_up_error(&error) {
+                    self.packet_list = None;
+                    self.packet_detail = None;
+                    return;
+                }
                 self.packet_list = None;
                 self.packet_detail = None;
                 self.status = StatusMessage::error(error);
@@ -1098,6 +1127,10 @@ impl CliApp {
                 self.packet_detail_scroll = 0;
             }
             Err(error) => {
+                if self.is_live_capture_warming_up_error(&error) {
+                    self.packet_detail = None;
+                    return;
+                }
                 self.packet_detail = None;
                 self.status = StatusMessage::error(error);
             }
@@ -1116,6 +1149,10 @@ impl CliApp {
         }) {
             Ok(report) => self.stats_report = Some(report),
             Err(error) => {
+                if self.is_live_capture_warming_up_error(&error) {
+                    self.stats_report = None;
+                    return;
+                }
                 self.stats_report = None;
                 self.status = StatusMessage::error(error);
             }
@@ -1134,6 +1171,10 @@ impl CliApp {
         }) {
             Ok(report) => self.conversations_report = Some(report),
             Err(error) => {
+                if self.is_live_capture_warming_up_error(&error) {
+                    self.conversations_report = None;
+                    return;
+                }
                 self.conversations_report = None;
                 self.status = StatusMessage::error(error);
             }
@@ -1153,6 +1194,10 @@ impl CliApp {
         }) {
             Ok(report) => self.streams_report = Some(report),
             Err(error) => {
+                if self.is_live_capture_warming_up_error(&error) {
+                    self.streams_report = None;
+                    return;
+                }
                 self.streams_report = None;
                 self.status = StatusMessage::error(error);
             }
@@ -1172,6 +1217,10 @@ impl CliApp {
         }) {
             Ok(report) => self.transactions_report = Some(report),
             Err(error) => {
+                if self.is_live_capture_warming_up_error(&error) {
+                    self.transactions_report = None;
+                    return;
+                }
                 self.transactions_report = None;
                 self.status = StatusMessage::error(error);
             }
@@ -1327,6 +1376,10 @@ impl CliApp {
         }
 
         self.refresh_interfaces();
+        if let Err(error) = capture_permissions::ensure_capture_privileges_installed() {
+            self.status = StatusMessage::error(error);
+            return;
+        }
         let interface = self
             .available_interfaces
             .get(self.selected_interface)
@@ -1459,7 +1512,12 @@ impl CliApp {
             .as_ref()
             .map(render_packet_detail_report)
             .unwrap_or_else(|| {
-                "No packet selected.\n\nMove through the list with j/k or arrow keys.".to_string()
+                if self.active_capture.is_some() {
+                    "Waiting for first packet...\n\nLive capture is running.".to_string()
+                } else {
+                    "No packet selected.\n\nMove through the list with j/k or arrow keys."
+                        .to_string()
+                }
             })
     }
 }

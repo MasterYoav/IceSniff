@@ -52,6 +52,7 @@ const liveCapture = {
   child: null,
   stderr: "",
   outputPath: "",
+  stopFile: "",
   stopRequested: false
 };
 
@@ -214,11 +215,11 @@ function resolveHelperCommand() {
   }
 
   const candidates = [
-    path.join(BUNDLED_CLI_ROOT, "icesniff-capture-helper"),
     ...tempTargetRoots().flatMap((root) => [
       path.join(root, "debug", "icesniff-capture-helper"),
       path.join(root, "release", "icesniff-capture-helper")
-    ])
+    ]),
+    path.join(BUNDLED_CLI_ROOT, "icesniff-capture-helper")
   ];
   const binary = candidates.find(isExecutable);
   if (binary) {
@@ -549,16 +550,19 @@ async function startCapture(request, response) {
   state.isCaptureTransitioning = true;
   const runtime = resolveHelperCommand();
   const outputPath = path.join(os.tmpdir(), `icesniff-live-${Date.now()}-${crypto.randomUUID()}.pcap`);
+  const stopFile = path.join(os.tmpdir(), `icesniff-live-${Date.now()}-${crypto.randomUUID()}.stop`);
   const captureRuntime = runtime || resolveCLICommand();
   const captureArgs = runtime
-    ? [...runtime.preArgs, "start", "--interface", selectedInterface, "--output", outputPath]
+    ? [...runtime.preArgs, "start", "--interface", selectedInterface, "--output", outputPath, "--stop-file", stopFile]
     : [
         ...captureRuntime.preArgs,
         "capture-start",
         "--interface",
         selectedInterface,
         "--output",
-        outputPath
+        outputPath,
+        "--stop-file",
+        stopFile
       ];
   const child = spawn(captureRuntime.command, captureArgs, {
     cwd: captureRuntime.cwd,
@@ -569,6 +573,7 @@ async function startCapture(request, response) {
   liveCapture.child = child;
   liveCapture.stderr = "";
   liveCapture.outputPath = outputPath;
+  liveCapture.stopFile = stopFile;
   liveCapture.stopRequested = false;
 
   if (child.stderr) {
@@ -594,13 +599,35 @@ async function startCapture(request, response) {
     state.statusMessage = `Live capture failed: ${error.message}`;
   });
 
-  await new Promise((resolve) => setTimeout(resolve, 350));
+  const startDeadline = Date.now() + 4000;
+  while (Date.now() < startDeadline) {
+    if (child.exitCode !== null) {
+      liveCapture.child = null;
+      state.isCaptureTransitioning = false;
+      state.isSniffing = false;
+      throw new Error((liveCapture.stderr || "Live capture helper exited immediately.").trim());
+    }
 
-  if (child.exitCode !== null) {
+    try {
+      const stat = await fs.stat(outputPath);
+      if (stat.isFile() && stat.size > 0) {
+        break;
+      }
+    } catch {}
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  try {
+    const stat = await fs.stat(outputPath);
+    if (!stat.isFile() || stat.size === 0) {
+      throw new Error("Live capture helper did not create a readable capture file in time.");
+    }
+  } catch (error) {
     liveCapture.child = null;
     state.isCaptureTransitioning = false;
     state.isSniffing = false;
-    throw new Error((liveCapture.stderr || "Live capture helper exited immediately.").trim());
+    throw new Error(liveCapture.stderr.trim() || error.message);
   }
 
   state.capturePath = outputPath;
@@ -663,7 +690,11 @@ async function stopCapture(response) {
     });
 
     try {
-      child.kill("SIGTERM");
+      if (liveCapture.stopFile) {
+        fs.writeFile(liveCapture.stopFile, "stop").then(() => {}, () => {});
+      } else {
+        child.kill("SIGTERM");
+      }
     } catch {
       clearTimeout(timeout);
       resolve();
@@ -671,6 +702,7 @@ async function stopCapture(response) {
   });
 
   liveCapture.child = null;
+  liveCapture.stopFile = "";
   state.isSniffing = false;
   state.isCaptureTransitioning = false;
   state.statusMessage = "Live capture stopped.";

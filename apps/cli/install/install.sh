@@ -179,8 +179,10 @@ write_launcher "$BIN_ROOT/icesniff" "$target_dir" "launcher" "$INSTALL_ROOT" "$B
 ensure_shell_path
 
 printf '\nInstalled IceSniff CLI %s to %s\n' "$tag" "$target_dir"
-printf 'Launcher: %s/icesniff-cli\n' "$BIN_ROOT"
-printf 'Menu: %s/icesniff\n' "$BIN_ROOT"
+printf 'Binaries: %s\n' "$BIN_ROOT"
+printf '\nRun one of these commands:\n'
+printf '  icesniff      Start the IceSniff terminal menu\n'
+printf '  icesniff-cli  Start the IceSniff TUI directly (skip the menu)\n'
 
 case ":$PATH:" in
   *":$BIN_ROOT:"*) ;;

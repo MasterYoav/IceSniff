@@ -161,50 +161,86 @@ fn draw(stdout: &mut io::Stdout, state: &LauncherState) -> Result<(), String> {
     execute!(stdout, Clear(ClearType::All), MoveTo(0, 0))
         .map_err(|error| format!("failed to clear launcher screen: {error}"))?;
 
-    let (width, _) = size().unwrap_or((120, 40));
-    let content_width = width.saturating_sub(8) as usize;
+    let (width, height) = size().unwrap_or((120, 40));
+    let content_width = width.saturating_sub(6).max(20) as usize;
+    let compact = height < 24;
+    let mut lines = Vec::new();
 
-    for line in render_icesniff_logo() {
-        writeln!(stdout, "    {line}")
-            .map_err(|error| format!("failed to draw launcher logo: {error}"))?;
+    let logo_lines = if compact {
+        render_compact_logo()
+    } else {
+        let full_logo = render_icesniff_logo();
+        let logo_width = full_logo
+            .iter()
+            .map(|line| ansi_visible_width(line))
+            .max()
+            .unwrap_or_default();
+        let reserved_rows = 10 + MENU_OPTIONS.len();
+        if logo_width > content_width || full_logo.len() + reserved_rows > height as usize {
+            render_compact_logo()
+        } else {
+            full_logo
+        }
+    };
+    lines.extend(logo_lines);
+    if !compact {
+        lines.push(String::new());
     }
 
-    writeln!(
-        stdout,
-        "    \x1b[38;5;250mChoose how you want to run IceSniff on this machine.\x1b[0m"
-    )
-    .map_err(|error| format!("failed to draw launcher text: {error}"))?;
-    writeln!(stdout).map_err(|error| format!("failed to draw launcher spacer: {error}"))?;
+    lines.extend(wrap_text(
+        "\x1b[38;5;250mChoose how you want to run IceSniff on this machine.\x1b[0m",
+        content_width,
+    ));
+    lines.push(String::new());
 
     for (index, label) in MENU_OPTIONS.iter().enumerate() {
-        let marker = if state.selected == index { ">" } else { " " };
-        let color = if state.selected == index {
-            "\x1b[38;2;132;245;220m"
-        } else {
-            "\x1b[38;5;252m"
-        };
-        writeln!(stdout, "    {marker} {}. {color}{label}\x1b[0m", index + 1)
-            .map_err(|error| format!("failed to draw launcher option: {error}"))?;
+        lines.extend(format_option_lines(
+            index,
+            label,
+            state.selected == index,
+            content_width,
+        ));
     }
 
-    writeln!(stdout).map_err(|error| format!("failed to draw launcher spacer: {error}"))?;
-    writeln!(
-        stdout,
-        "    \x1b[38;5;246mUse ↑/↓ or j/k to move, Enter to select, q to quit.\x1b[0m"
-    )
-    .map_err(|error| format!("failed to draw launcher hint: {error}"))?;
+    if !compact {
+        lines.push(String::new());
+    }
+    lines.extend(wrap_text(
+        "\x1b[38;5;246mUse ↑/↓ or j/k to move, Enter to select, q to quit.\x1b[0m",
+        content_width,
+    ));
 
     if let Some(status) = &state.status {
-        writeln!(stdout).map_err(|error| format!("failed to draw launcher spacer: {error}"))?;
+        lines.push(String::new());
         let color = if status.is_error {
             "\x1b[38;2;255;129;129m"
         } else {
             "\x1b[38;2;132;245;220m"
         };
-        for line in wrap_text(&status.message, content_width) {
-            writeln!(stdout, "    {color}{line}\x1b[0m")
-                .map_err(|error| format!("failed to draw launcher status: {error}"))?;
+        let status_text = format!("{color}{}\x1b[0m", status.message);
+        lines.extend(wrap_text(&status_text, content_width));
+    }
+
+    let start_y = if lines.len() < height as usize {
+        ((height as usize - lines.len()) / 2).min(3)
+    } else {
+        0
+    };
+
+    for (index, line) in lines.iter().enumerate() {
+        if index + start_y >= height as usize {
+            break;
         }
+        let visible_width = ansi_visible_width(line);
+        let x = if visible_width < width as usize {
+            ((width as usize - visible_width) / 2) as u16
+        } else {
+            0
+        };
+        execute!(stdout, MoveTo(x, (index + start_y) as u16))
+            .map_err(|error| format!("failed to position launcher line: {error}"))?;
+        write!(stdout, "{line}")
+            .map_err(|error| format!("failed to draw launcher line: {error}"))?;
     }
 
     stdout
@@ -215,6 +251,60 @@ fn draw(stdout: &mut io::Stdout, state: &LauncherState) -> Result<(), String> {
 
 fn wrap_text(text: &str, width: usize) -> Vec<String> {
     if width < 8 {
+        return vec![text.to_string()];
+    }
+
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        if current.is_empty() {
+            current.push_str(word);
+            continue;
+        }
+
+        if ansi_visible_width(&current) + 1 + ansi_visible_width(word) <= width {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(current);
+            current = word.to_string();
+        }
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
+fn format_option_lines(index: usize, label: &str, selected: bool, width: usize) -> Vec<String> {
+    let marker = if selected { ">" } else { " " };
+    let color = if selected {
+        "\x1b[38;2;132;245;220m"
+    } else {
+        "\x1b[38;5;252m"
+    };
+    let prefix = format!("{marker} {}. ", index + 1);
+    let continuation = "    ";
+    let wrapped = wrap_plain_text(label, width.saturating_sub(prefix.len()).max(8));
+    let mut lines = Vec::new();
+
+    for (line_index, chunk) in wrapped.iter().enumerate() {
+        if line_index == 0 {
+            lines.push(format!("{prefix}{color}{chunk}\x1b[0m"));
+        } else {
+            lines.push(format!("{continuation}{color}{chunk}\x1b[0m"));
+        }
+    }
+
+    lines
+}
+
+fn wrap_plain_text(text: &str, width: usize) -> Vec<String> {
+    if width < 4 {
         return vec![text.to_string()];
     }
 
@@ -242,6 +332,36 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
         lines.push(String::new());
     }
     lines
+}
+
+fn render_compact_logo() -> Vec<String> {
+    vec![
+        String::new(),
+        "\x1b[38;2;62;156;216mICE\x1b[0m\x1b[38;2;128;211;241mSNIFF\x1b[0m".to_string(),
+        "\x1b[38;5;245mPacket inspection and live capture.\x1b[0m".to_string(),
+    ]
+}
+
+fn ansi_visible_width(value: &str) -> usize {
+    let mut count = 0usize;
+    let mut chars = value.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for control in chars.by_ref() {
+                    if matches!(control, 'm' | 'K' | 'J' | 'H' | 'f') {
+                        break;
+                    }
+                }
+                continue;
+            }
+        }
+        count += 1;
+    }
+
+    count
 }
 
 fn resolve_bundle_root() -> Result<PathBuf, String> {

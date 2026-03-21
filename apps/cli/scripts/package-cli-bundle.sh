@@ -246,6 +246,13 @@ fi
 
 cp "$cli_binary" "$bundle_root/libexec/icesniff-cli"
 chmod +x "$bundle_root/libexec/icesniff-cli"
+if [ "$platform" = "macos" ]; then
+  helper_binary="$REPO_ROOT/apps/macos/Sources/IceSniffMac/Resources/BundledCLI/icesniff-capture-helper"
+  if [ -f "$helper_binary" ]; then
+    cp "$helper_binary" "$bundle_root/libexec/icesniff-capture-helper"
+    chmod +x "$bundle_root/libexec/icesniff-capture-helper"
+  fi
+fi
 write_unix_launchers "$bundle_root"
 
 copy_runtime "$runtime_path" "$bundle_root/runtime"

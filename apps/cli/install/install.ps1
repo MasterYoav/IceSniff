@@ -131,6 +131,8 @@ try {
 
 Write-Host ""
 Write-Host "Installed IceSniff CLI $tag to $targetDir"
-Write-Host "Launcher: $binRoot\icesniff-cli.cmd"
-Write-Host "Menu: $binRoot\icesniff.cmd"
-Write-Host "The commands are available in new terminal windows as: icesniff-cli and icesniff"
+Write-Host "Binaries: $binRoot"
+Write-Host ""
+Write-Host "Run one of these commands:"
+Write-Host "  icesniff      Start the IceSniff terminal menu"
+Write-Host "  icesniff-cli  Start the IceSniff TUI directly (skip the menu)"
