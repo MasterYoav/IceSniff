@@ -98,11 +98,15 @@ jobs:
         run: ./scripts/release-macos.sh
 
       - name: Rename release package
-        run: cp build/release/IceSniffMac-installer.pkg build/release/MacOS_Desktop.pkg
+        run: |
+          cp build/release/IceSniffMac-installer.pkg build/release/MacOS_Desktop.pkg
+          cp build/release/IceSniffMac.dmg build/release/MacOS_Desktop.dmg
 
-      - name: Upload desktop package to release
+      - name: Upload desktop artifacts to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.release_tag }}
-          files: apps/macos/build/release/MacOS_Desktop.pkg
+          files: |
+            apps/macos/build/release/MacOS_Desktop.pkg
+            apps/macos/build/release/MacOS_Desktop.dmg
           fail_on_unmatched_files: true

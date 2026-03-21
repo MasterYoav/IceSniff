@@ -8,10 +8,12 @@ APP_NAME="${ICESNIFF_APP_NAME:-IceSniffMac}"
 ARCHIVE_DIR="${ICESNIFF_RELEASE_DIR:-$APP_ROOT/build/release}"
 APP_PATH="$ARCHIVE_DIR/$APP_NAME.app"
 ZIP_PATH="$ARCHIVE_DIR/$APP_NAME.zip"
+DMG_PATH="$ARCHIVE_DIR/$APP_NAME.dmg"
 PKG_PATH="$ARCHIVE_DIR/$APP_NAME-installer.pkg"
 COMPONENT_PKG_PATH="$ARCHIVE_DIR/$APP_NAME-component.pkg"
 GPL_ARCHIVE_DIR="$ARCHIVE_DIR/gpl-compliance"
 PKG_PAYLOAD_ROOT="$ARCHIVE_DIR/pkg-root"
+DMG_STAGING_ROOT="$ARCHIVE_DIR/dmg-root"
 ICON_SOURCE="$APP_ROOT/Sources/IceSniffMac/Resources/icon-light.png"
 RESOURCE_BUNDLE_NAME="${APP_NAME}_${APP_NAME}.bundle"
 BUNDLED_TSHARK_PATH="$APP_ROOT/Sources/IceSniffMac/Resources/BundledTShark/Wireshark.app"
@@ -227,6 +229,23 @@ build_installer_pkg() {
   fi
 }
 
+build_release_dmg() {
+  echo "==> Creating macOS DMG"
+
+  rm -rf "$DMG_STAGING_ROOT" "$DMG_PATH"
+  mkdir -p "$DMG_STAGING_ROOT"
+
+  ditto "$APP_PATH" "$DMG_STAGING_ROOT/$APP_NAME.app"
+  ln -s /Applications "$DMG_STAGING_ROOT/Applications"
+
+  hdiutil create \
+    -volname "$APP_NAME" \
+    -srcfolder "$DMG_STAGING_ROOT" \
+    -format UDZO \
+    -ov \
+    "$DMG_PATH" >/dev/null
+}
+
 build_release_app() {
   echo "==> Building macOS release app"
   cd "$APP_ROOT"
@@ -301,6 +320,7 @@ if [[ -n "${ICESNIFF_NOTARY_KEYCHAIN_PROFILE:-}" ]]; then
 fi
 
 build_installer_pkg
+build_release_dmg
 
 if [[ -n "${ICESNIFF_NOTARY_KEYCHAIN_PROFILE:-}" && -n "$INSTALLER_SIGNING_IDENTITY" ]]; then
   echo "==> Submitting installer for notarization"
@@ -315,5 +335,6 @@ fi
 
 echo "==> Release app ready at $APP_PATH"
 echo "==> Zip ready at $ZIP_PATH"
+echo "==> DMG ready at $DMG_PATH"
 echo "==> Installer ready at $PKG_PATH"
 echo "==> GPL compliance materials ready at $GPL_ARCHIVE_DIR"
