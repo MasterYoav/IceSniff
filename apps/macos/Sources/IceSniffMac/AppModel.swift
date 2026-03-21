@@ -1217,7 +1217,7 @@ struct LiveCaptureBridge {
         let backendKind: BackendKind
         let executableURL: URL
         let interfaceListArguments: [String]
-        let startArguments: (_ interface: String, _ outputPath: String) -> [String]
+        let startArguments: (_ interface: String, _ outputPath: String, _ stopFile: String?) -> [String]
         let prefersPrivilegedLaunch: Bool
         let dropsPrivilegesAfterLaunch: Bool
         let environmentOverrides: [String: String]
@@ -1240,8 +1240,12 @@ struct LiveCaptureBridge {
                 backendKind: .iceSniffHelper,
                 executableURL: candidate,
                 interfaceListArguments: ["list-interfaces"],
-                startArguments: { interface, outputPath in
-                    ["start", "--interface", interface, "--output", outputPath]
+                startArguments: { interface, outputPath, stopFile in
+                    var arguments = ["start", "--interface", interface, "--output", outputPath]
+                    if let stopFile {
+                        arguments.append(contentsOf: ["--stop-file", stopFile])
+                    }
+                    return arguments
                 },
                 prefersPrivilegedLaunch: false,
                 dropsPrivilegesAfterLaunch: false,
@@ -2159,7 +2163,7 @@ final class AppModel: ObservableObject {
         let process = Process()
         let stderr = Pipe()
         process.executableURL = runtime.executableURL
-        process.arguments = runtime.startArguments(interface, path)
+        process.arguments = runtime.startArguments(interface, path, nil)
         process.environment = Self.mergedCaptureEnvironment(overrides: runtime.environmentOverrides)
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
@@ -2231,10 +2235,7 @@ final class AppModel: ObservableObject {
         try Self.prepareRestrictedTemporaryFile(at: errorFile)
         try Self.prepareRestrictedTemporaryFile(at: stopFile)
 
-        var arguments = runtime.startArguments(interface, outputPath)
-        if runtime.backendKind == .iceSniffHelper {
-            arguments.append(contentsOf: ["--stop-file", stopFile])
-        }
+        let arguments = runtime.startArguments(interface, outputPath, runtime.backendKind == .iceSniffHelper ? stopFile : nil)
 
         let launchCommand = PrivilegedCaptureCommandBuilder.launchCommand(
             executablePath: runtime.executableURL.path,
