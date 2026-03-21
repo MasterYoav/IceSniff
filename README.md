@@ -21,20 +21,38 @@ IceSniff is released under the MIT License. See `LICENSE`.
 [![Wireshark](https://img.shields.io/badge/Wireshark-%230000ff?logo=wireshark&style=flat&logoColor=%23fff)](#)
 [![Supabase](https://img.shields.io/badge/Supabase-3FCF8E?logo=supabase&logoColor=fff)](#)
 
+## Installation
+
+### CLI one-line installers
+
+- macOS / Linux:
+  `curl -fsSL https://raw.githubusercontent.com/MasterYoav/IceSniff/main/install.sh | sh`
+- Windows PowerShell:
+  `irm https://raw.githubusercontent.com/MasterYoav/IceSniff/main/install.ps1 | iex`
+
+After install:
+
+- `icesniff` opens the terminal launcher menu with Live, CLI, and uninstall options
+- `icesniff-cli` opens the full-screen TUI directly
+
+The installer adds the launchers to the user PATH, so they can be run from a new terminal window without changing directories.
+
 ## What Works Today
 
 ### CLI
 
 The CLI can:
 
+- install through one-line platform installers with `icesniff` and `icesniff-cli` launchers
 - open and inspect `.pcap` and `.pcapng` captures
 - list packets and inspect packet details
 - calculate capture stats and conversation summaries
 - analyze streams and transactions
 - save filtered captures to a new PCAP file
 - emit text or stable `--json` output
-- run an interactive shell workflow
-- perform live capture through external packet capture tools
+- run a full-screen terminal UI with sections, packet list/detail panes, filters, live capture controls, and save/open flows
+- run a launcher menu that can start the TUI, start the local web app, or uninstall the CLI bundle
+- perform live capture through the bundled runtime and platform capture helpers
 
 Current protocol coverage includes:
 
@@ -59,13 +77,13 @@ The native macOS app currently supports:
 
 The local web app currently supports:
 
-- a browser-first packet/live-capture shell with a collapsible overlay section rail and a toggleable AI side panel
+- a browser-first packet/live-capture shell with a launcher-aligned layout, overlay section rail, and toggleable AI side panel
 - opening local capture files through browser upload into a local temp workspace
 - starting and stopping live capture through the Rust capture helper with an in-app toggle control
 - saving the current capture from the packets view
 - packet, stats, conversations, streams, and transactions views
 - browser-local UI preferences for modern themes, fonts, and type scale
-- double-click packet preview in the packets view
+- a redesigned packets view with custom filter/input controls, interface picker, save toggle, and double-click packet preview
 - analysis driven by the same `icesniff-cli` + `tshark` engine used by the macOS app
 
 ## What Is Not Done Yet
@@ -112,21 +130,6 @@ cargo run -p icesniff-cli -- conversations path/to/capture.pcap
 cargo run -p icesniff-cli -- streams path/to/capture.pcap
 cargo run -p icesniff-cli -- transactions path/to/capture.pcap
 ```
-
-One-line installers:
-
-- macOS (Apple Silicon) / Linux (x86_64, ARM64):
-  `curl -fsSL https://raw.githubusercontent.com/MasterYoav/IceSniff/main/install.sh | sh`
-- Windows (x86_64, ARM64):
-  `irm https://raw.githubusercontent.com/MasterYoav/IceSniff/main/install.ps1 | iex`
-
-After install:
-
-- `icesniff` opens the launcher menu with Live, CLI, and uninstall options
-- `icesniff-cli` starts the full-screen CLI tool directly
-
-The release bundles install both launchers plus a private bundled Wireshark runtime for
-`dumpcap`-backed live capture. See `docs/cli/install.md` for the exact bundle layout and release workflow.
 
 ### macOS App
 
