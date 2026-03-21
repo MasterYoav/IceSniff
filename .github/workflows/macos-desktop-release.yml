@@ -97,16 +97,20 @@ jobs:
           ICESNIFF_BUILD_VERSION: ${{ github.run_number }}
         run: ./scripts/release-macos.sh
 
-      - name: Rename release package
+      - name: Verify bundled desktop runtime
         run: |
-          cp build/release/IceSniffMac-installer.pkg build/release/MacOS_Desktop.pkg
-          cp build/release/IceSniffMac.dmg build/release/MacOS_Desktop.dmg
+          set -euo pipefail
+          APP="build/release/IceSniffMac.app"
+          test -x "$APP/Contents/Resources/BundledCLI/icesniff-cli"
+          test -x "$APP/Contents/Resources/BundledCLI/icesniff-capture-helper"
+          test -x "$APP/Contents/Resources/BundledTShark/Wireshark.app/Contents/MacOS/tshark"
 
-      - name: Upload desktop artifacts to release
+      - name: Rename release package
+        run: cp build/release/IceSniffMac-installer.pkg build/release/MacOS_Desktop.pkg
+
+      - name: Upload desktop package to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare.outputs.release_tag }}
-          files: |
-            apps/macos/build/release/MacOS_Desktop.pkg
-            apps/macos/build/release/MacOS_Desktop.dmg
+          files: apps/macos/build/release/MacOS_Desktop.pkg
           fail_on_unmatched_files: true
