@@ -27,6 +27,8 @@ IceSniff is released under the MIT License. See `LICENSE`.
 
 - macOS / Linux:
   `curl -fsSL https://raw.githubusercontent.com/MasterYoav/IceSniff/main/install.sh | sh`
+
+  You can also download our macos native app from [![Releases](https://github.com/MasterYoav/IceSniff/releases)](#)
 - Windows PowerShell:
   `irm https://raw.githubusercontent.com/MasterYoav/IceSniff/main/install.ps1 | iex`
 
