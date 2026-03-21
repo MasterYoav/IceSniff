@@ -104,8 +104,10 @@ GitHub release assets are built and uploaded by `.github/workflows/cli-release.y
 
 Triggers:
 
-- push a `v*` tag to publish assets to that release
+- push a `cli-v*` tag to publish assets to that release
 - run the workflow manually with a `tag` input to create or update a release
+
+The one-line CLI installers resolve the newest published `cli-v*` release, so normal app releases can stay focused on the macOS desktop package. Those CLI releases should stay marked as prereleases.
 
 The workflow currently produces:
 

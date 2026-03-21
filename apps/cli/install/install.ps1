@@ -30,9 +30,10 @@ function Resolve-Tag {
         return $version
     }
 
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest"
-    if (-not $release.tag_name) {
-        throw "Failed to resolve latest release tag for $repo"
+    $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=100"
+    $release = $releases | Where-Object { $_.tag_name -like "cli-v*" } | Select-Object -First 1
+    if (-not $release -or -not $release.tag_name) {
+        throw "Failed to resolve latest CLI release tag for $repo"
     }
     return $release.tag_name
 }

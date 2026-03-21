@@ -3,7 +3,7 @@ name: CLI Release Bundles
 on:
   push:
     tags:
-      - "v*"
+      - "cli-v*"
   workflow_dispatch:
     inputs:
       tag:
@@ -49,6 +49,7 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.release_tag }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
+          prerelease: true
 
   bundle-macos:
     name: Bundle CLI (macOS)

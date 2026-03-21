@@ -137,8 +137,9 @@ resolve_tag() {
     return
   fi
 
-  curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+  curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=100" \
     | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' \
+    | grep '^cli-v' \
     | head -n 1
 }
 

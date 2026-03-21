@@ -1,0 +1,108 @@
+name: macOS Desktop Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create or update"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Prepare Release Metadata
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+      app_version: ${{ steps.resolve.outputs.app_version }}
+    steps:
+      - name: Resolve release tag
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+
+          if [ -z "$tag" ]; then
+            echo "Release tag is required." >&2
+            exit 1
+          fi
+
+          app_version="${tag#v}"
+
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "app_version=$app_version" >> "$GITHUB_OUTPUT"
+
+  create-release:
+    name: Create Or Update Release
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+    steps:
+      - name: Create release container
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+
+  build-macos-desktop:
+    name: Build macOS Desktop Package
+    runs-on: macos-15
+    needs:
+      - prepare
+      - create-release
+    defaults:
+      run:
+        working-directory: apps/macos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install Wireshark.app
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: brew install --cask wireshark
+
+      - name: Download matching Wireshark source archive
+        run: |
+          set -euo pipefail
+          version="$(sed -E 's/.*Wireshark\) ([0-9]+\.[0-9]+\.[0-9]+).*/\1/' Sources/IceSniffMac/Resources/BundledTShark/WIRESHARK_VERSION.txt)"
+          archive="wireshark-${version}.tar.xz"
+          archive_path="$PWD/build/release/$archive"
+          mkdir -p "$PWD/build/release"
+          curl -fL "https://www.wireshark.org/download/src/all-versions/$archive" -o "$archive_path"
+          echo "ICESNIFF_WIRESHARK_SOURCE_ARCHIVE=$archive_path" >> "$GITHUB_ENV"
+
+      - name: Build desktop package
+        env:
+          ICESNIFF_ALLOW_MISSING_SUPABASE_CONFIG: "1"
+          ICESNIFF_APP_VERSION: ${{ needs.prepare.outputs.app_version }}
+          ICESNIFF_BUILD_VERSION: ${{ github.run_number }}
+        run: ./scripts/release-macos.sh
+
+      - name: Rename release package
+        run: cp build/release/IceSniffMac-installer.pkg build/release/MacOS_Desktop.pkg
+
+      - name: Upload desktop package to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          files: apps/macos/build/release/MacOS_Desktop.pkg
+          fail_on_unmatched_files: true
