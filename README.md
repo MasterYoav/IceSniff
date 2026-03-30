@@ -2,8 +2,6 @@
   <img src="docs/media/banner.png" alt="IceSniff app banner" width="1000">
 </p>
 
-# IceSniff
-
 IceSniff is an open-source packet analysis project focused on a modern UI, integrated AI panel, a scriptable CLI, and a shared Rust analysis engine.
 
 The repository currently contains:
