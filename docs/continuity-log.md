@@ -2,6 +2,81 @@
 
 This file is the running project documentary for future sessions.
 
+## 2026-04-08
+
+### Starting point
+
+- User wanted a new public-facing IceSniff webpage based closely on the existing Dragon app website at `https://dragon-chi.vercel.app/`.
+- First pass was built as plain static HTML/CSS/JS in a new `IceSniffWP` folder.
+- User then clarified that all websites should be Astro-based going forward.
+
+### Decisions preserved
+
+- `IceSniffWP` is now an Astro project and should stay Astro-based for future website work.
+- Kept the Dragon page composition and flow mostly intact:
+  - sticky header
+  - full-bleed hero
+  - interactive hero demo
+  - short workflow and capability sections
+  - final download CTA
+- Replaced Dragon branding with IceSniff branding rather than redesigning from scratch:
+  - cold blue / glacier palette
+  - IceSniff iconography and polar-bear artwork
+  - IceSniff-specific product copy centered on packet capture, analysis, and the AI rail
+
+### Work completed
+
+- Created new website project at `IceSniffWP/`.
+- Converted the initial static implementation into a real Astro app with:
+  - `IceSniffWP/package.json`
+  - `IceSniffWP/astro.config.mjs`
+  - `IceSniffWP/tsconfig.json`
+  - `IceSniffWP/src/pages/index.astro`
+  - `IceSniffWP/src/styles/global.css`
+  - `IceSniffWP/public/app.js`
+  - `IceSniffWP/public/assets/*`
+  - `IceSniffWP/.gitignore`
+- Copied IceSniff brand assets into Astro public assets:
+  - app icon
+  - banner
+  - brand mark
+  - glacier / hero landscape artwork
+- Built a landing page that is intentionally close to Dragon’s structure but IceSniff-specific in:
+  - colors
+  - imagery
+  - copy
+  - hero demo content
+- Kept the hero interactive via client-side JS:
+  - desktop vs AI rail mode toggle
+  - capture vs analysis state toggle
+  - sticky header scroll state
+  - reveal-on-scroll transitions
+- Installed Astro dependencies in `IceSniffWP`.
+- Verified Astro production build with `npm run build` from `IceSniffWP/`.
+
+### Current status
+
+- `IceSniffWP` builds successfully as a static Astro site.
+- Current main entrypoint is `IceSniffWP/src/pages/index.astro`.
+- Current styling is consolidated in `IceSniffWP/src/styles/global.css`.
+- Current interactivity is handled by `IceSniffWP/public/app.js`.
+- Build output is generated under `IceSniffWP/dist/` and ignored via local `.gitignore`.
+- Astro cache and dependencies are also ignored locally:
+  - `.astro/`
+  - `node_modules/`
+- There is still an old leftover `IceSniffWP/assets/` folder from the initial plain static pass.
+  - It is no longer needed by the Astro site.
+  - Public assets now live under `IceSniffWP/public/assets/`.
+
+### Recommended next move
+
+Continue from the Astro version, not the old static one:
+
+- remove the now-unused `IceSniffWP/assets/` folder
+- optionally split the large `index.astro` into Astro components if more sections are added
+- run `npm run dev` inside `IceSniffWP/` and do a real visual pass in a browser
+- if approved, deploy the Astro site and replace any temporary local-only workflow
+
 ## 2026-03-11
 
 ### Starting point

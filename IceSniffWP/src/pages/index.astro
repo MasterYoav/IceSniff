@@ -1,0 +1,244 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const workflowSteps = [
+  {
+    title: "Capture live",
+    body:
+      "Select an interface, start sniffing, and see packets land as the session unfolds.",
+  },
+  {
+    title: "Inspect deeply",
+    body:
+      "Move from summaries to decoded fields, layer detail, and packet-aware context actions.",
+  },
+  {
+    title: "Ask in context",
+    body:
+      "Open the right-side AI rail and reason over the selected packet without breaking focus.",
+  },
+];
+
+const actionHighlights = [
+  {
+    title: "Open PCAP",
+    body: "Load existing captures directly into the native shell.",
+  },
+  {
+    title: "Live Sniff",
+    body: "Start and stop capture from the same operational center.",
+  },
+  {
+    title: "Filter Fast",
+    body: "Use comfort-first filters like",
+    code: ["http", "443"],
+  },
+  {
+    title: "Inspect Fields",
+    body: "Drill into decoded packet structure and byte-aware metadata.",
+  },
+  {
+    title: "Trace Streams",
+    body: "Jump across conversations, streams, and transactions quickly.",
+  },
+  {
+    title: "Save Output",
+    body: "Export the full capture or only the packets that match your filter.",
+  },
+];
+
+const coverageGroups = [
+  {
+    title: "Core Transport",
+    body: "Ethernet, ARP, IPv4, TCP, UDP, and ICMP.",
+  },
+  {
+    title: "App Protocols",
+    body: "DNS, HTTP/1.1, and TLS handshake metadata.",
+  },
+  {
+    title: "Surfaces",
+    body: "Native macOS app, CLI, and a local web companion.",
+  },
+  {
+    title: "Backend",
+    body: "Shared Rust analysis engine with bundled capture helpers.",
+  },
+];
+---
+
+<BaseLayout
+  title="IceSniff | A modern packet analysis app for macOS"
+  description="IceSniff is an open-source macOS packet analyzer with live capture, packet detail, AI assistance, and a shared Rust backend."
+>
+  <div class="page-shell">
+    <div class="page-noise" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="IceSniff home">
+        <span class="brand-mark" aria-hidden="true">
+          <img src="/assets/app-icon.png" alt="" />
+        </span>
+        <span>IceSniff</span>
+      </a>
+
+      <div class="header-actions">
+        <a
+          class="header-github"
+          href="https://github.com/MasterYoav/IceSniff"
+          aria-label="IceSniff on GitHub"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0 0 22 12.017C22 6.484 17.522 2 12 2Z"
+            ></path>
+          </svg>
+        </a>
+
+        <a
+          class="header-cta"
+          href="https://github.com/MasterYoav/IceSniff/releases"
+          aria-label="Download IceSniff for macOS"
+        >
+          <span class="header-cta-default">Download</span>
+          <span class="header-cta-hover" aria-hidden="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12 3a1 1 0 0 1 1 1v8.586l2.293-2.293 1.414 1.414L12 16.414l-4.707-4.707 1.414-1.414L11 12.586V4a1 1 0 0 1 1-1Zm-7 15h14v2H5v-2Z"
+              ></path>
+            </svg>
+            <span>for Mac</span>
+          </span>
+        </a>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy reveal">
+          <p class="eyebrow">Native macOS Packet Analysis</p>
+          <h1>Inspect traffic without leaving the flow.</h1>
+          <p class="hero-body">
+            IceSniff puts live capture, packet drill-down, analysis sections, and
+            a packet-aware AI rail into one fast native workspace.
+          </p>
+
+          <dl class="hero-meta">
+            <div>
+              <dt>Built with</dt>
+              <dd>SwiftUI + Rust + TShark</dd>
+            </div>
+            <div>
+              <dt>License</dt>
+              <dd>MIT</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="hero-visual reveal">
+          <div class="display-orbit orbit-one"></div>
+          <div class="display-orbit orbit-two"></div>
+
+          <div class="interactive-demo">
+            <div class="macbook-demo">
+              <img
+                class="macbook-frame"
+                src="/assets/macbook.png"
+                alt="MacBook showing the IceSniff packet browser"
+              />
+
+              <div class="macbook-screen">
+                <div class="macbook-screen-bg"></div>
+
+                <div class="macbook-screen-stage">
+                  <img
+                    class="desktop-shot"
+                    src="/assets/demo-fullscreen.png"
+                    alt="IceSniff full-screen desktop screenshot shown inside a MacBook"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section workflow-section" id="workflow">
+        <div class="feature-section-layout">
+          <div class="section-heading reveal">
+            <p class="eyebrow">Workflow</p>
+            <h2>A tighter lane for packet work.</h2>
+          </div>
+
+          <div class="workflow-list">
+            {workflowSteps.map((step) => (
+              <article class="workflow-item reveal">
+                <h3>{step.title}</h3>
+                <p>{step.body}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section class="section split-section" id="surfaces">
+        <div class="feature-section-layout">
+          <div class="section-heading reveal">
+            <p class="eyebrow">Surface</p>
+            <h2>The app revolves around six fast moves.</h2>
+          </div>
+
+          <div class="action-grid">
+            {actionHighlights.map((item) => (
+              <article class="action-row reveal">
+                <h3>{item.title}</h3>
+                <p>
+                  {item.code ? (
+                    <>
+                      {item.body} <code>{item.code[0]}</code> or <code>{item.code[1]}</code>.
+                    </>
+                  ) : (
+                    item.body
+                  )}
+                </p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section class="section formats-section" id="coverage">
+        <div class="feature-section-layout">
+          <div class="section-heading reveal">
+            <p class="eyebrow">Coverage</p>
+            <h2>Shared engine depth, kept inside one calm shell.</h2>
+          </div>
+
+          <div class="formats-grid">
+            {coverageGroups.map((group) => (
+              <article class="format-row reveal">
+                <h3>{group.title}</h3>
+                <p>{group.body}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section class="site-finale reveal" aria-label="IceSniff banner">
+        <div class="site-finale-inner">
+          <img
+            class="site-finale-band"
+            src="/assets/banner.png"
+            alt=""
+            aria-hidden="true"
+          />
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script is:inline src="/app.js"></script>
+</BaseLayout>
